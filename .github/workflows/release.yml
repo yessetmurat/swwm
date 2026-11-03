@@ -1,0 +1,89 @@
+name: Release
+
+# On a pushed tag v<x.y.z>: build, sign (Developer ID), notarize bin/swwm,
+# attach the tarball to a GitHub release, and bump url/sha256 in the tap.
+#
+# Required repository secrets:
+#   CODESIGN_P12            base64 of the Developer ID Application .p12 (cert + key)
+#   CODESIGN_P12_PASSWORD   the .p12 export password
+#   NOTARY_APPLE_ID         Apple ID used for notarization
+#   NOTARY_TEAM_ID          Apple Developer team id
+#   NOTARY_PASSWORD         app-specific password for that Apple ID
+#   TAP_TOKEN               PAT with push access to the Homebrew tap repo
+# Required repository variable:
+#   TAP_REPO                the tap repo, e.g. <owner>/homebrew-tap
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Import signing certificate
+        env:
+          CODESIGN_P12: ${{ secrets.CODESIGN_P12 }}
+          CODESIGN_P12_PASSWORD: ${{ secrets.CODESIGN_P12_PASSWORD }}
+        run: |
+          KEYCHAIN=build.keychain
+          PASSWORD=$(uuidgen)
+          security create-keychain -p "$PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 3600 "$KEYCHAIN"
+          security unlock-keychain -p "$PASSWORD" "$KEYCHAIN"
+          security default-keychain -s "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
+          echo "$CODESIGN_P12" | base64 --decode > cert.p12
+          security import cert.p12 -k "$KEYCHAIN" -P "$CODESIGN_P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$PASSWORD" "$KEYCHAIN"
+          rm cert.p12
+
+      - name: Store notary credentials
+        env:
+          NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+          NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+        run: |
+          xcrun notarytool store-credentials swwm-ci \
+            --apple-id "$NOTARY_APPLE_ID" --team-id "$NOTARY_TEAM_ID" \
+            --password "$NOTARY_PASSWORD" --keychain build.keychain
+
+      - name: Build, sign, notarize
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          IDENTITY=$(security find-identity -v -p codesigning build.keychain \
+            | grep "Developer ID Application" | head -1 | sed -E 's/.*"(.*)"/\1/')
+          test -n "$IDENTITY" || { echo "no Developer ID Application identity in keychain"; exit 1; }
+          make release VERSION="$VERSION" SIGN_IDENTITY="$IDENTITY" NOTARY_PROFILE=swwm-ci
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          gh release create "$GITHUB_REF_NAME" \
+            "build/swwm-$VERSION.tar.gz" --generate-notes
+
+      - name: Bump Homebrew tap
+        env:
+          GH_TOKEN: ${{ secrets.TAP_TOKEN }}
+          TAP_REPO: ${{ vars.TAP_REPO }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          SHA=$(shasum -a 256 "build/swwm-$VERSION.tar.gz" | awk '{print $1}')
+          URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/swwm-${VERSION}.tar.gz"
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/${TAP_REPO}.git" tap
+          cd tap
+          sed -i '' -E \
+            -e "s|url \".*\"|url \"${URL}\"|" \
+            -e "s|sha256 \".*\"|sha256 \"${SHA}\"|" \
+            Formula/swwm.rb
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "swwm ${VERSION}"
+          git push
