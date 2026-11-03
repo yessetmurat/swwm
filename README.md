@@ -167,8 +167,8 @@ and not to the terminal.
 A development build and the Homebrew build are signed by different
 certificates, so macOS treats them as different programs with the same name:
 after switching from one to the other, the Accessibility switch looks on but
-does not apply. Reset it with `tccutil reset Accessibility dev.swwm.swwm` and
-allow swwm again.
+does not apply. Remove swwm from the list with the − button and allow it
+again (`tccutil` cannot reset it: swwm is a plain binary, not an app bundle).
 
 ## Release
 
