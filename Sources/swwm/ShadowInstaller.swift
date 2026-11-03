@@ -85,7 +85,8 @@ enum ShadowInstaller {
     }
 
     private static func sourceDir() -> String {
-        let exe = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
+        // Not argv[0]: run from PATH it is a bare `swwm`, not a path.
+        guard let exe = Bundle.main.executableURL?.resolvingSymlinksInPath() else { die("cannot find the swwm binary", 1) }
         return exe.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("share/swwm/osax").path
     }
 
