@@ -65,6 +65,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.notify("Window shadows are unavailable: the Dock module did not answer. "
                 + "See \(DockModuleInstaller.logPath).")
         }
+        manager.onLevelUnavailable = { [weak self] in
+            self?.notify("Floating windows on top need the updated Dock module: "
+                + "run `sudo swwm --install-dock-module`, then `killall Dock`.")
+        }
         manager.onChange = { bar.setNeedsUpdate() }
         tap.onMouseMoved = { bar.cursorMoved($0) }
         manager.onReload = { loader.reload() }
@@ -80,7 +84,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Dock is not a regular app: no launch notification, only this list.
         dockWatch = NSWorkspace.shared.observe(\.runningApplications, options: [.new]) { _, change in
             guard change.newValue?.contains(where: { $0.bundleIdentifier == "com.apple.dock" }) == true else { return }
-            DispatchQueue.main.async { manager.dock.whenReachable { manager.applyShadowAll() } }
+            DispatchQueue.main.async {
+                manager.dock.whenReachable {
+                    manager.applyShadowAll()
+                    manager.applyLevelAll()  // windows an older payload turned down, after a re-install
+                }
+            }
         }
 
         observer.start()

@@ -62,3 +62,13 @@ private let rect = CGRect(x: 0, y: 0, width: 1000, height: 600)
     #expect(fresh.activeWorkspace(on: 1) == "3")
     #expect(fresh.workspace(named: "3")!.tree.frames(in: rect, gap: 0) == w.workspace(named: "3")!.tree.frames(in: rect, gap: 0))
 }
+
+@Test func savedFloatingFlag() throws {
+    let w = world([B])
+    w.add(10, to: "1", floatingFrame: CGRect(x: 0, y: 0, width: 100, height: 100))
+    w.add(11, to: "1", floatingFrame: nil)
+    let back = try JSONDecoder().decode(SavedWorkspaces.self, from: JSONEncoder().encode(SavedWorkspaces(world: w, pids: [10: 7, 11: 7])))
+    #expect(back.wasFloating(10, pid: 7))
+    #expect(!back.wasFloating(11, pid: 7))
+    #expect(!back.wasFloating(10, pid: 8))
+}

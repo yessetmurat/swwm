@@ -98,9 +98,10 @@ title bar or resizing by an edge works too.
 
 ## Dock module
 
-Optional. macOS has no public way to remove another app's window shadow, so
-this uses a small payload loaded into Dock. It is
-off by default and swwm works fully without it.
+Optional. macOS has no public way to remove another app's window shadow or to
+keep a window above the active app's windows, so this uses a small payload
+loaded into Dock. With it, floating windows stay above tiled ones. It is off by
+default and swwm works fully without it.
 
 Requirements (the installer checks them): SIP filesystem protections and
 debugging restrictions disabled, and the `-arm64e_preview_abi` boot-arg. Check

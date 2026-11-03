@@ -80,6 +80,7 @@ final class AppObserver {
         AXObserverAddNotification(observer, el, kAXFocusedWindowChangedNotification as CFString, nil)
         // Switching native tabs reports only a main window change.
         AXObserverAddNotification(observer, el, kAXMainWindowChangedNotification as CFString, nil)
+        AXObserverAddNotification(observer, el, kAXSheetCreatedNotification as CFString, nil)
         CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
         for w in AXWindow.windows(of: app) { watch(w) }
     }
@@ -106,6 +107,9 @@ final class AppObserver {
             guard let app, let w = AXWindow(element, app: app) else { return }
             watch(w)
             manager.windowCreated(w)
+            if manager.appName(of: w.id) == nil { manager.childWindowAppeared(element, pid: pid) }
+        case kAXSheetCreatedNotification:
+            manager.childWindowAppeared(element, pid: pid)
         case kAXFocusedWindowChangedNotification, kAXMainWindowChangedNotification:
             guard let app, let w = AXWindow(element, app: app) else { return }
             manager.windowFocusChanged(w)

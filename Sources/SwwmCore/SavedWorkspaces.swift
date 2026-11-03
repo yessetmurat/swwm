@@ -17,6 +17,7 @@ public struct SavedWorkspaces: Codable, Equatable, Sendable {
         var window: WindowID
         var pid: Int32
         var workspace: String
+        var floating: Bool?  // optional: files from before this was kept
     }
 
     var entries: [Entry]
@@ -25,7 +26,7 @@ public struct SavedWorkspaces: Codable, Equatable, Sendable {
 
     public init(world: World, pids: [WindowID: Int32]) {
         entries = pids.compactMap { id, pid in
-            world.workspace(containing: id).map { Entry(window: id, pid: pid, workspace: $0.name) }
+            world.workspace(containing: id).map { Entry(window: id, pid: pid, workspace: $0.name, floating: $0.floating[id] != nil) }
         }.sorted { $0.window < $1.window }
         var trees: [String: DwindleTree.Shape] = [:]
         for name in Set(entries.map(\.workspace)) {
@@ -36,7 +37,15 @@ public struct SavedWorkspaces: Codable, Equatable, Sendable {
     }
 
     public func workspace(of window: WindowID, pid: Int32) -> String? {
-        entries.first { $0.window == window && $0.pid == pid }?.workspace
+        entry(window, pid)?.workspace
+    }
+
+    public func wasFloating(_ window: WindowID, pid: Int32) -> Bool {
+        entry(window, pid)?.floating == true
+    }
+
+    private func entry(_ window: WindowID, _ pid: Int32) -> Entry? {
+        entries.first { $0.window == window && $0.pid == pid }
     }
 }
 
