@@ -1,0 +1,9 @@
+#!/bin/sh
+# Prints the SHA-1 of the valid code-signing identity whose certificate
+# belongs to team $1 (the certificate's OU).
+team=${1:?usage: sign-identity TEAM_ID}
+security find-identity -v -p codesigning | awk '/"/ { print $2 }' | while read -r sha; do
+    security find-certificate -a -Z -p |
+        awk -v s="$sha" '$0 == "SHA-1 hash: " s { f = 1; next } /^SHA-1 hash:/ { f = 0 } f' |
+        openssl x509 -noout -subject 2>/dev/null | grep -q "OU=$team," && { echo "$sha"; exit 0; }
+done

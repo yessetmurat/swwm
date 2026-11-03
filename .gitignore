@@ -1,2 +1,15 @@
+# Local working material
 /docs/superpowers
 /.superpowers
+
+# Build output
+/build
+/.build
+
+# SwiftPM / Xcode local state
+/.swiftpm
+xcuserdata/
+DerivedData/
+
+# macOS
+.DS_Store
