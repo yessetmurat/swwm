@@ -37,9 +37,7 @@ private func err(_ s: String) -> String? {
     #expect(rules.first { $0.matches(app: "Discord", title: "") }?.workspace == "2")
     #expect(rules.first { $0.matches(app: "Telegram", title: "") }?.workspace == "2")
     #expect(!rules.contains { $0.matches(app: "Telegram Lite", title: "") })
-    #expect(rules.contains { $0.matches(app: "Finder", title: "Copy") && $0.float == true })
-    #expect(!rules.contains { $0.matches(app: "Finder", title: "Downloads") })
-    #expect(rules.contains { $0.matches(app: "Tailscale", title: "") && $0.float == true })
+    #expect(!rules.contains { $0.float == true })  // windows that refuse their tile size float on their own
 }
 
 @Test func settingsParse() throws {

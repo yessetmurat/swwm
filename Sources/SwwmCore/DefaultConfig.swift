@@ -107,13 +107,7 @@ extension Config {
     app = "^(Telegram|Discord)$"
     workspace = "2"
 
-    [[rule]]
-    app = "^Finder$"
-    title = "(Copy|Connect|Move|Info|Finder Settings)"
-    float = true
-
-    [[rule]]
-    app = "^(System Settings|Calculator|Archive Utility|Cisco Secure Client|Tailscale)$"
-    float = true
+    # Windows that cannot take their tile's size float on their own; to float
+    # anything else: [[rule]] app = "^App$" float = true
     """#
 }

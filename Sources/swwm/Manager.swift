@@ -28,6 +28,12 @@ final class Manager {
     private var shadowNoticeShown = false
     var onShadowUnavailable: () -> Void = {}
     private var remembered: [WindowID: String] = [:]     // workspace of minimized/hidden windows
+    private var saved: SavedWorkspaces?                    // from the last run, read at start
+    private var opened: [WindowID: CGRect] = [:]           // where the app opened it, until the size check
+    private var tilesByKind: [String: Bool] = [:]          // learned from the first window of each kind
+    private var savePending = false
+    /// Per login session: the temporary directory is cleared on reboot.
+    private static let savedFile = URL(fileURLWithPath: NSTemporaryDirectory()).appending(path: "swwm-workspaces.json")
     private var history = FocusHistory()
     var focused: WindowID? { history.current }
     private(set) var lastWarp = Date.distantPast         // when swwm last moved the cursor
@@ -44,10 +50,15 @@ final class Manager {
 
     func start() {
         world.updateMonitors(Displays.current())
+        saved = (try? Data(contentsOf: Self.savedFile)).flatMap { try? JSONDecoder().decode(SavedWorkspaces.self, from: $0) }
         for app in NSWorkspace.shared.runningApplications where app.isManageable {
             adopt(app)
         }
+        if let saved { world.restore(saved) }
         layoutAll()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            for id in self?.windows.keys.map({ $0 }) ?? [] { self?.floatIfRefused(id) }
+        }
         applyShadowAll()
         if let app = NSWorkspace.shared.frontmostApplication { appActivated(app) }
     }
@@ -89,11 +100,13 @@ final class Manager {
         let floats = rule?.float == true || !w.isResizable
         let frame = w.frame
         let target = remembered.removeValue(forKey: w.id)
+            ?? saved?.workspace(of: w.id, pid: w.pid).flatMap { world.workspace(named: $0)?.name }
             ?? rule?.workspace
             ?? world.monitor(at: point).flatMap(world.activeWorkspace(on:))
         guard let target else { return false }
         windows[w.id] = w
         titles[w.id] = w.title
+        opened[w.id] = frame
         AppObserver.current?.watch(w)  // windows first seen on a focus change are not watched yet
         world.add(w.id, to: target, floatingFrame: floats ? frame : nil)
         applyShadow(w.id)
@@ -114,6 +127,7 @@ final class Manager {
         AppObserver.current?.watch(w)
         applyShadow(w.id)
         onChange()
+        saveSoon()
     }
 
     /// The tab a closed tab leaves on screen: an unmanaged window of the same
@@ -130,6 +144,17 @@ final class Manager {
     private func near(_ a: CGRect, _ b: CGRect) -> Bool {
         abs(a.minX - b.minX) <= 1 && abs(a.minY - b.minY) <= 1
             && abs(a.width - b.width) <= 1 && abs(a.height - b.height) <= 1
+    }
+
+    /// Writes where each window is, once per run-loop turn of changes.
+    private func saveSoon() {
+        guard !savePending else { return }
+        savePending = true
+        DispatchQueue.main.async { [self] in
+            savePending = false
+            let s = SavedWorkspaces(world: world, pids: windows.mapValues(\.pid))
+            try? JSONEncoder().encode(s).write(to: Self.savedFile, options: .atomic)
+        }
     }
 
     /// Sets a window's shadow to what `window-shadow` wants, if anything.
@@ -169,6 +194,7 @@ final class Manager {
         windows[id] = nil
         titles[id] = nil
         hidden[id] = nil
+        opened[id] = nil
         guard let m else { return }
         layout(m)
         if hadFocus {
@@ -184,7 +210,7 @@ final class Manager {
     }
 
     func layout(_ m: MonitorID) {
-        defer { onChange() }
+        defer { onChange(); saveSoon() }
         guard let info = world.monitorInfo(m), let activeName = world.activeWorkspace(on: m),
               let ws = world.workspace(named: activeName) else { return }
         let others = world.monitors.filter { $0.id != m }
@@ -472,21 +498,94 @@ final class Manager {
 
     func windowCreated(_ w: AXWindow) {
         // New windows open on the display under the cursor.
+        let returning = remembered[w.id] != nil  // unminimized or unhidden: keeps its place
         guard track(w, near: Displays.cursor), let ws = world.workspace(containing: w.id), let m = world.monitor(of: ws.name) else { return }
-        // Placed before the rest: it is on screen at the app's spot until then.
-        if world.isVisible(w.id), let r = world.layoutFrame(of: w.id, gap: settings.gap) { w.setFrame(r) }
+        if !returning, ws.tree.contains(w.id), world.isVisible(w.id) {
+            switch tilesByKind[kind(of: w)] {
+            case true?: settle(w.id, on: m)
+            case false?:
+                opened[w.id] = nil
+                makeFloating(w.id, frame: w.frame)
+            case nil: place(w.id, attempt: 0)
+            }
+        } else {
+            settle(w.id, on: m)
+        }
+    }
+
+    /// Tiles a new window or floats it, without first showing it in a tile it
+    /// cannot fill: a window that stretches one way only floats where it opened.
+    /// One that takes no size change yet (opening animation, Ghostty setting
+    /// up) stays where the app put it and is asked again; after that it tiles,
+    /// and the later checks float it if it still refuses.
+    private func place(_ id: WindowID, attempt: Int) {
+        guard let w = windows[id], let ws = world.workspace(containing: id), ws.tree.contains(id),
+              let m = world.monitor(of: ws.name), world.isVisible(id) else { return }
+        let axes = w.resizableAxes()
+        let waits = [0.03, 0.06, 0.1, 0.15]
+        if axes.width != axes.height {
+            tilesByKind[kind(of: w)] = false
+            opened[id] = nil
+            makeFloating(id, frame: w.frame)
+        } else if !axes.width, attempt < waits.count {
+            let wait = waits[attempt] - (attempt > 0 ? waits[attempt - 1] : 0)
+            DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [weak self] in self?.place(id, attempt: attempt + 1) }
+        } else {
+            if axes.width { tilesByKind[kind(of: w)] = true }
+            settle(id, on: m)
+        }
+    }
+
+    /// Windows of one kind tile or float alike, so the next one is placed at
+    /// once, without the in-place size probe (it waits out opening animations).
+    /// The full-screen button tells an app's main windows from its panels
+    /// (Finder's browser windows from its Info windows).
+    private func kind(of w: AXWindow) -> String {
+        let button: AXUIElement? = w.element.attribute(kAXFullScreenButtonAttribute)
+        return "\(w.appName)|\(button != nil)"
+    }
+
+    /// Puts a window in its place before the rest of the display, then checks
+    /// it again: a fresh window may drop the size and keep only the position.
+    private func settle(_ id: WindowID, on m: MonitorID) {
+        if world.isVisible(id), let r = world.layoutFrame(of: id, gap: settings.gap) { windows[id]?.setFrame(r) }
         layout(m)
-        // A fresh window may drop the size and keep only the position: Ghostty
-        // holds a new window at its parent's size for a moment. Check soon and
-        // a few times more, so the fix shows up within a frame or two.
         for delay in [0.03, 0.08, 0.3] {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                guard let self, self.world.isVisible(w.id), let win = self.windows[w.id],
-                      let r = self.world.layoutFrame(of: w.id, gap: self.settings.gap),
-                      !self.near(win.frame, r) else { return }
-                win.setFrame(r)
+                guard let self, self.world.isVisible(id), let win = self.windows[id],
+                      let r = self.world.layoutFrame(of: id, gap: self.settings.gap) else { return }
+                if !self.near(win.frame, r) { win.setFrame(r) }
+                if delay == 0.3 { self.floatIfRefused(id) }  // still the wrong size after the last try
             }
         }
+    }
+
+    /// A tiled window that does not take its tile's size (a fixed-size dialog)
+    /// would overlap its neighbors: it floats instead. 20pt of slack for
+    /// windows that size in steps.
+    private func floatIfRefused(_ id: WindowID) {
+        let start = opened.removeValue(forKey: id)
+        guard let w = windows[id], world.isVisible(id), let ws = world.workspace(containing: id), ws.zoomed != id,
+              let m = world.monitor(of: ws.name), let r = ws.tree.frames(in: world.workArea(of: m), gap: settings.gap)[id]
+        else { return }
+        let now = w.frame
+        guard abs(now.width - r.width) > 20 || abs(now.height - r.height) > 20 else { return }
+        tilesByKind[kind(of: w)] = false
+        makeFloating(id, frame: start ?? now)
+    }
+
+    /// Floats a tiled window at `frame`: where the app opened it, as a tile
+    /// may have stretched it the one way it can. Off the work area: centered.
+    private func makeFloating(_ id: WindowID, frame f: CGRect) {
+        guard let w = windows[id], let ws = world.workspace(containing: id), let m = world.monitor(of: ws.name),
+              let info = world.monitorInfo(m) else { return }
+        log.debug("float \(id, privacy: .public) \(w.appName, privacy: .public)")
+        let frame = shownFloatingFrame(f, on: info, area: world.workArea(of: m))
+        world.remove(id)
+        world.add(id, to: ws.name, floatingFrame: frame)
+        if w.frame != frame { w.setFrame(frame) }
+        layout(m)
+        applyShadow(id)
     }
 
     func windowGone(_ id: WindowID) {

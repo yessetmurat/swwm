@@ -4,7 +4,8 @@ A tiling window manager and bar for macOS, written in Swift. One app and one
 config file, no scripts.
 
 - Dwindle tiling (as in Hyprland): a new window splits the focused one; the
-  split follows the shape of the area.
+  split follows the shape of the area. Windows that cannot take their tile's
+  size (fixed-size dialogs, settings windows) float where they open.
 - Virtual workspaces assigned to displays. Inactive workspaces' windows are
   moved off-screen, so SIP can stay enabled.
 - Focus never jumps to another display when a window closes, minimizes or

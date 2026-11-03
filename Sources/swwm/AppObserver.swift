@@ -38,11 +38,10 @@ final class AppObserver {
         }
         on(NSWorkspace.didLaunchApplicationNotification) { [weak self] app in
             guard app.isManageable else { return }
-            // A fresh app may not answer AX yet.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                self?.observe(app)
-                self?.manager.appShown(app)
-            }
+            // Right away: a window shown before swwm watches the app sits at the
+            // app's spot until it is found. `observe` retries while AX is not ready.
+            self?.observe(app)
+            self?.manager.appShown(app)
         }
         on(NSWorkspace.didTerminateApplicationNotification) { [weak self] app in
             self?.observers[app.processIdentifier] = nil
@@ -60,7 +59,7 @@ final class AppObserver {
     }
 
     /// Registers for an app's window events; an app that is not ready for
-    /// AX yet gets a few more tries.
+    /// AX yet gets more tries, often, for about 5 s.
     private func observe(_ app: NSRunningApplication, attempt: Int = 0) {
         let pid = app.processIdentifier
         guard observers[pid] == nil, !app.isTerminated else { return }
@@ -69,8 +68,8 @@ final class AppObserver {
         let el = AXUIElementCreateApplication(pid)
         let created = AXObserverAddNotification(observer, el, kAXWindowCreatedNotification as CFString, nil)
         guard created == .success || created == .notificationAlreadyRegistered else {
-            if attempt < 5 {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+            if attempt < 50 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
                     self?.observe(app, attempt: attempt + 1)
                     self?.manager.appShown(app)
                 }

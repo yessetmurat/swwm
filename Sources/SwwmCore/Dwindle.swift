@@ -66,6 +66,46 @@ public final class DwindleTree {
         }
     }
 
+    /// The layout without its nodes, kept across restarts.
+    public indirect enum Shape: Codable, Equatable, Sendable {
+
+        case window(WindowID)
+        case split(ratio: CGFloat, first: Shape, second: Shape)
+    }
+
+    public var shape: Shape? {
+        func shape(_ n: Node) -> Shape {
+            if let w = n.window { return .window(w) }
+            return .split(ratio: n.ratio, first: shape(n.first!), second: shape(n.second!))
+        }
+        return root.map(shape)
+    }
+
+    /// Rebuilds the tree as `shape` with the windows it has now: windows the
+    /// shape no longer has drop out, windows it lacks are added after it.
+    public func restore(_ shape: Shape) {
+        let had = windows
+        let have = Set(had)
+        func build(_ s: Shape) -> Node? {
+            switch s {
+            case .window(let w):
+                return have.contains(w) ? Node(window: w) : nil
+            case .split(let ratio, let a, let b):
+                switch (build(a), build(b)) {
+                case let (x?, y?):
+                    let n = Node(first: x, second: y)
+                    n.ratio = ratio
+                    return n
+                case let (x, y):
+                    return x ?? y
+                }
+            }
+        }
+        root = build(shape)
+        root?.parent = nil
+        for w in had where !contains(w) { insert(w, splitting: nil) }
+    }
+
     public func remove(_ w: WindowID) {
         guard let node = leaf(w) else { return }
         guard let parent = node.parent else { root = nil; return }

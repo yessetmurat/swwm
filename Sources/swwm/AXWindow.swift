@@ -81,6 +81,28 @@ struct AXWindow {
         }
     }
 
+    /// Which axes take a new size, found in place by asking for one point
+    /// more (one less where that fails, as at a maximum) and putting it back.
+    func resizableAxes() -> (width: Bool, height: Bool) {
+        var axes = (width: false, height: false)
+        withoutEnhancedUI {
+            let s = frame.size
+            func size(_ w: CGFloat, _ h: CGFloat) -> CGSize {
+                var v = CGSize(width: w, height: h)
+                AXUIElementSetAttributeValue(element, kAXSizeAttribute as CFString, AXValueCreate(.cgSize, &v)!)
+                return frame.size
+            }
+            var t = size(s.width + 1, s.height + 1)
+            axes = (t.width != s.width, t.height != s.height)
+            if !axes.width || !axes.height {
+                t = size(axes.width ? t.width : s.width - 1, axes.height ? t.height : s.height - 1)
+                axes = (axes.width || t.width != s.width, axes.height || t.height != s.height)
+            }
+            _ = size(s.width, s.height)
+        }
+        return axes
+    }
+
     private func position(_ p: CGPoint) {
         var p = p
         AXUIElementSetAttributeValue(element, kAXPositionAttribute as CFString, AXValueCreate(.cgPoint, &p)!)
