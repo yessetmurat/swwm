@@ -69,6 +69,21 @@ final class Manager {
             log.debug("skip \(w.id, privacy: .public) \(w.appName, privacy: .public) role=\(w.element.attribute(kAXRoleAttribute) as String? ?? "-", privacy: .public) sub=\(w.element.attribute(kAXSubroleAttribute) as String? ?? "-", privacy: .public) level=\(w.level, privacy: .public) full=\(w.isFullScreen, privacy: .public) min=\(w.isMinimized, privacy: .public)")
             return false
         }
+        // A new or newly shown native tab takes the tile of the tab it covers,
+        // which drops out of the app's window list.
+        if w.hasTabs, let app = NSRunningApplication(processIdentifier: w.pid) {
+            let listed = Set(AXWindow.windows(of: app).map(\.id))
+            let f = w.frame
+            func overlap(_ id: WindowID) -> CGFloat {
+                let r = world.layoutFrame(of: id, gap: settings.gap)?.intersection(f) ?? .null
+                return r.isNull ? 0 : r.width * r.height
+            }
+            if let covered = windows.values.filter({ $0.pid == w.pid && !listed.contains($0.id) && overlap($0.id) > 0 })
+                .max(by: { overlap($0.id) < overlap($1.id) }) {
+                takeOver(covered.id, by: w)
+                return true
+            }
+        }
         let rule = world.config.rules.first { $0.matches(app: w.appName, title: w.title) }
         let floats = rule?.float == true || !w.isResizable
         let frame = w.frame
@@ -81,6 +96,35 @@ final class Manager {
         world.add(w.id, to: target, floatingFrame: floats ? frame : nil)
         applyShadow(w.id)
         return true
+    }
+
+    /// Native tabs are windows of their own and only the shown one is listed:
+    /// a tile follows the shown tab of its group.
+    private func takeOver(_ old: WindowID, by w: AXWindow) {
+        log.debug("tab \(w.id, privacy: .public) takes over \(old, privacy: .public)")
+        world.replace(old, with: w.id)
+        windows[old] = nil
+        titles[old] = nil
+        if let m = hidden.removeValue(forKey: old) { hidden[w.id] = m }
+        windows[w.id] = w
+        titles[w.id] = w.title
+        if focused == old { history.focused(w.id, at: Date()) }
+        AppObserver.current?.watch(w)
+        applyShadow(w.id)
+        onChange()
+    }
+
+    /// The tab a closed tab leaves on screen: an unmanaged window of the same
+    /// app in the closed window's place.
+    private func nextTab(after id: WindowID) -> AXWindow? {
+        guard let w = windows[id], let app = NSRunningApplication(processIdentifier: w.pid),
+              let r = world.layoutFrame(of: id, gap: settings.gap) else { return nil }
+        return AXWindow.windows(of: app).first {
+            let f = $0.frame
+            return windows[$0.id] == nil && $0.isStandard && !$0.isMinimized
+                && abs(f.minX - r.minX) <= 1 && abs(f.minY - r.minY) <= 1
+                && abs(f.width - r.width) <= 1 && abs(f.height - r.height) <= 1
+        }
     }
 
     /// Sets a window's shadow to what `window-shadow` wants, if anything.
@@ -425,9 +469,18 @@ final class Manager {
         // New windows open on the display under the cursor.
         guard track(w, near: Displays.cursor), let ws = world.workspace(containing: w.id), let m = world.monitor(of: ws.name) else { return }
         layout(m)
+        // A fresh window may drop the size and keep only the position: Ghostty
+        // holds a new window at its parent's size for a moment. Set it once more.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            guard let self, self.world.isVisible(w.id),
+                  let r = self.world.layoutFrame(of: w.id, gap: self.settings.gap) else { return }
+            self.windows[w.id]?.setFrame(r)
+        }
     }
 
-    func windowGone(_ id: WindowID) { untrack(id, remember: false) }
+    func windowGone(_ id: WindowID) {
+        if let next = nextTab(after: id) { takeOver(id, by: next) } else { untrack(id, remember: false) }
+    }
 
     func windowMinimized(_ id: WindowID) { untrack(id, remember: true) }
 

@@ -205,6 +205,15 @@ public final class World {
         return home[ws.name]
     }
 
+    /// Puts `new` where `old` is: same tile, floating frame, zoom and focus order.
+    public func replace(_ old: WindowID, with new: WindowID) {
+        guard let ws = workspace(containing: old) else { return }
+        ws.tree.leaf(old)?.window = new
+        if let f = ws.floating.removeValue(forKey: old) { ws.floating[new] = f }
+        ws.mru = ws.mru.map { $0 == old ? new : $0 }
+        if ws.zoomed == old { ws.zoomed = new }
+    }
+
     public func move(_ w: WindowID, to workspace: String) {
         guard let from = self.workspace(containing: w), from.name != workspace else { return }
         let floating = from.floating[w]

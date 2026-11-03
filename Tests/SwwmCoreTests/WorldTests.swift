@@ -169,3 +169,20 @@ func world(_ ms: [MonitorInfo], _ config: Config = .default) -> World {
     #expect(w.layoutFrame(of: 2, gap: 8) == area)
     #expect(w.layoutFrame(of: 99, gap: 8) == nil)
 }
+
+@Test func replaceKeepsPlace() {
+    let w = world([B])
+    w.add(10, to: "1", floatingFrame: nil)
+    w.add(11, to: "1", floatingFrame: nil)
+    w.add(12, to: "1", floatingFrame: CGRect(x: 1, y: 2, width: 3, height: 4))
+    let ws = w.workspace(named: "1")!
+    ws.zoomed = 10
+    let before = ws.tree.frames(in: w.workArea(of: 1), gap: 8)[10]
+    w.replace(10, with: 20)
+    w.replace(12, with: 22)
+    #expect(ws.tree.windows == [20, 11])
+    #expect(ws.tree.frames(in: w.workArea(of: 1), gap: 8)[20] == before)
+    #expect(ws.zoomed == 20)
+    #expect(ws.floating[22] == CGRect(x: 1, y: 2, width: 3, height: 4) && ws.floating[12] == nil)
+    #expect(ws.mru == [22, 11, 20])
+}
