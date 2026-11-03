@@ -29,6 +29,7 @@ final class Manager {
     var onShadowUnavailable: () -> Void = {}
     private var raised: Set<WindowID> = []                 // set to the floating level by swwm
     private var raisedChildren: [WindowID: pid_t] = [:]    // sheets and dialogs among them, by app
+    private let sheetQueue = DispatchQueue(label: "dev.swwm.sheets")
     private var levelNoticeShown = false
     var onLevelUnavailable: () -> Void = {}
     private var remembered: [WindowID: String] = [:]     // workspace of minimized/hidden windows
@@ -254,6 +255,45 @@ final class Manager {
             guard reply != .done else { return }
             self?.raised.remove(id)
             self?.raisedChildren[id] = nil
+        }
+    }
+
+    /// A sheet is on screen well before its app reports it (System Settings:
+    /// about 250 ms later), hidden under its raised window until then. After a
+    /// click or a key in an app with a raised window, watch the window server
+    /// for a short while and raise a new window that sits inside one of the
+    /// app's raised windows. Off the main thread: right then the app is busy
+    /// and swwm's AX calls to it hold the main thread. `pid` nil: the
+    /// frontmost app.
+    func watchForSheets(pid: pid_t?) {
+        guard let pid = pid ?? NSWorkspace.shared.frontmostApplication?.processIdentifier else { return }
+        let parents = Set(windows.values.filter { $0.pid == pid && raised.contains($0.id) }.map(\.id))
+        guard !parents.isEmpty else { return }
+        let known = Set(windows.keys).union(raised)
+        sheetQueue.async { [weak self, dock] in
+            let end = Date().addingTimeInterval(0.6)
+            var done = known
+            while Date() < end {
+                let mine = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+                    as? [[String: Any]] ?? []).filter { ($0[kCGWindowOwnerPID as String] as? Int32) == pid }
+                func id(_ i: [String: Any]) -> WindowID? { (i[kCGWindowNumber as String] as? Int).map(WindowID.init) }
+                func bounds(_ i: [String: Any]) -> CGRect? {
+                    (i[kCGWindowBounds as String] as? NSDictionary).flatMap { CGRect(dictionaryRepresentation: $0) }
+                }
+                let frames = mine.filter { id($0).map(parents.contains) == true }.compactMap(bounds)
+                for i in mine where (i[kCGWindowLayer as String] as? Int) == 0 {
+                    guard let w = id(i), !done.contains(w), let b = bounds(i),
+                          frames.contains(where: { $0.insetBy(dx: -1, dy: -1).contains(b) }) else { continue }
+                    done.insert(w)
+                    dock.setLevel(w, WindowLevel.floating) { reply in
+                        guard reply == .done, let self else { return }
+                        log.debug("raise sheet \(w, privacy: .public) seen on screen")
+                        self.raised.insert(w)
+                        self.raisedChildren[w] = pid
+                    }
+                }
+                Thread.sleep(forTimeInterval: 0.016)
+            }
         }
     }
 
@@ -765,6 +805,8 @@ final class Manager {
     func setFrame(_ id: WindowID, _ r: CGRect) { windows[id]?.setFrame(r) }
 
     func appName(of id: WindowID) -> String? { windows[id]?.appName }
+
+    func pid(of id: WindowID) -> pid_t? { windows[id]?.pid }
 
     /// From what swwm already knows: no AX round-trips, so a hung app cannot
     /// stall a query (and the event tap on the main thread).

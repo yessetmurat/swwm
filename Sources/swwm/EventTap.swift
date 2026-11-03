@@ -62,7 +62,10 @@ final class EventTap {
         case .keyDown:
             let combo = KeyCombo(keyCode: UInt16(event.getIntegerValueField(.keyboardEventKeycode)),
                                  modifiers: modifiers(event.flags))
-            guard let command = bindings[combo] else { return event }
+            guard let command = bindings[combo] else {
+                DispatchQueue.main.async { [manager] in manager.watchForSheets(pid: nil) }  // Save..., Delete...
+                return event
+            }
             // The tap only decides; the work runs after it returns, so a slow
             // app never holds up system input.
             DispatchQueue.main.async { [manager] in manager.run(command) }
@@ -80,6 +83,7 @@ final class EventTap {
                     press = type == .leftMouseDown
                         ? manager.window(at: p).flatMap { id in manager.frame(of: id).map { (id, $0) } }
                         : nil
+                    if let id = manager.window(at: p) { manager.watchForSheets(pid: manager.pid(of: id)) }
                 }
                 return event
             }
