@@ -42,6 +42,11 @@ final class AppObserver {
             // app's spot until it is found. `observe` retries while AX is not ready.
             self?.observe(app)
             self?.manager.appShown(app)
+            // A slow app (Xcode) shows its first window before its window events
+            // reach swwm: look again a few times; known windows are skipped.
+            for delay in [0.5, 1.5, 3, 6] {
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { self?.manager.appShown(app) }
+            }
         }
         on(NSWorkspace.didTerminateApplicationNotification) { [weak self] app in
             self?.observers[app.processIdentifier] = nil
