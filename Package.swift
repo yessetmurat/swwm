@@ -1,6 +1,9 @@
 // swift-tools-version: 6.0
 import PackageDescription
 
+// `make release` links a copy stamped with the release version.
+let infoPlist = Context.environment["SWWM_INFO_PLIST"] ?? "Resources/Info.plist"
+
 let package = Package(
     name: "swwm",
     platforms: [.macOS(.v15)],
@@ -17,7 +20,7 @@ let package = Package(
             // TCC and codesign: Info.plist goes into __TEXT,__info_plist.
             linkerSettings: [.unsafeFlags([
                 "-Xlinker", "-sectcreate", "-Xlinker", "__TEXT", "-Xlinker", "__info_plist",
-                "-Xlinker", "Resources/Info.plist",
+                "-Xlinker", infoPlist,
             ])]
         ),
         .testTarget(name: "SwwmCoreTests", dependencies: ["SwwmCore"]),

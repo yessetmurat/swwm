@@ -15,6 +15,7 @@ enum Client {
         usage: swwm                      start the window manager
                swwm <command>            run a command, as in the config's bindings
                swwm query windows|workspaces|monitors
+               swwm --version
         commands: focus|swap|warp left|down|up|right, focus-monitor left|right,
                   move-to-monitor left|right, workspace <name>, move-to-workspace <name>,
                   workspace-next, workspace-prev, toggle-float, toggle-zoom, balance,
@@ -24,6 +25,11 @@ enum Client {
 
     static func run(_ args: [String]) -> Never {
         if args == ["--help"] || args == ["-h"] { fail(usage, 64) }
+        if args == ["--version"] {
+            // Stamped into the embedded Info.plist by `make release`; "dev" otherwise.
+            print(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev")
+            exit(0)
+        }
         let request: Request
         do { request = try Request.parse(args) } catch { fail("swwm: \(error.message)\n\(usage)", 64) }
         switch send(request.line, timeout: 2) {

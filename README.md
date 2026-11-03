@@ -49,6 +49,7 @@ swwm reload                 # re-read the config
 swwm quit
 swwm query windows          # JSON; also: workspaces, monitors
 swwm query windows | jq -r '.[] | select(.focused) | .app'
+swwm --version              # the release version; "dev" for a local build
 ```
 
 Exit codes: `0` ok, `1` rejected (for example an unknown workspace, or swwm

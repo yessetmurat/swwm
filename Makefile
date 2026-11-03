@@ -46,7 +46,12 @@ release:
 		{ echo "usage: make release VERSION=<x.y.z> SIGN_IDENTITY=<Developer ID Application identity> NOTARY_PROFILE=<name>"; exit 1; }
 	@security find-identity -v -p codesigning | grep -F "$(SIGN_IDENTITY)" | grep -q "Developer ID Application" || \
 		{ echo "SIGN_IDENTITY must be a Developer ID Application identity"; exit 1; }
-	$(MAKE) dev SIGN_IDENTITY="$(SIGN_IDENTITY)" CODESIGN_FLAGS=--timestamp
+	# The version lives only in the tag: link a copy of Info.plist stamped with
+	# it (the path carries the version, so a new version always relinks).
+	mkdir -p build
+	plutil -replace CFBundleShortVersionString -string "$(VERSION)" -o build/Info-$(VERSION).plist Resources/Info.plist
+	SWWM_INFO_PLIST=build/Info-$(VERSION).plist $(MAKE) dev SIGN_IDENTITY="$(SIGN_IDENTITY)" CODESIGN_FLAGS=--timestamp
+	test "$$($(STAGE)/bin/swwm --version)" = "$(VERSION)"
 	# Notarize only bin/swwm. The arm64e shadow binaries are not Gatekeeper-
 	# launched (loaded into Dock / run by root launchd) and only work with SIP
 	# partly disabled; putting them in the notary submission would risk failing
