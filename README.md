@@ -103,7 +103,29 @@ off by default and swwm works fully without it.
 
 Requirements (the installer checks them): SIP filesystem protections and
 debugging restrictions disabled, and the `-arm64e_preview_abi` boot-arg. Check
-with `csrutil status` and `nvram boot-args`.
+the current state with `csrutil status` and `nvram boot-args`.
+
+To set them up (needs a reboot into recoveryOS; do it once):
+
+1. Shut the Mac down. Hold the power button until "Loading startup options"
+   appears, click **Options**, then **Continue** to enter recoveryOS.
+2. From the menu bar open **Utilities → Terminal** and run:
+
+   ```sh
+   csrutil enable --without fs --without debug --without nvram
+   nvram boot-args=-arm64e_preview_abi
+   ```
+
+   `csrutil` only takes effect from recoveryOS, and clearing the nvram
+   protection (`--without nvram`) is what lets the boot-arg be set.
+3. Reboot into macOS (**Apple menu → Restart**).
+4. Confirm: `csrutil status` shows filesystem protections and debugging
+   restrictions as `disabled`, and `nvram boot-args` contains
+   `-arm64e_preview_abi`.
+
+This weakens part of SIP, so only do it if you want the shadow module; swwm
+works fully without it. To undo later, boot into recoveryOS and run
+`csrutil enable`, then `sudo nvram -d boot-args` from macOS.
 
 ```sh
 sudo swwm --install-shadows     # installs a root launchd daemon; re-run after upgrading swwm
