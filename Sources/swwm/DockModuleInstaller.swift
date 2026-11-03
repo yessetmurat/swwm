@@ -1,5 +1,5 @@
 //
-//  ShadowInstaller.swift
+//  DockModuleInstaller.swift
 //  swwm
 //
 //  Created by Yesset Murat on 03.11.2026.
@@ -7,14 +7,14 @@
 
 import Foundation
 
-/// Installs the optional shadow module: a root launchd daemon that loads the
+/// Installs the optional Dock module: a root launchd daemon that loads the
 /// Dock payload at boot and after every Dock restart. Run with sudo.
-enum ShadowInstaller {
+enum DockModuleInstaller {
 
     static let supportDir = "/Library/Application Support/swwm"
-    static let plistPath = "/Library/LaunchDaemons/dev.swwm.shadows.plist"
-    static let logPath = "/Library/Logs/swwm-shadows.log"
-    static let label = "dev.swwm.shadows"
+    static let plistPath = "/Library/LaunchDaemons/dev.swwm.dock.plist"
+    static let logPath = "/Library/Logs/swwm-dock.log"
+    static let label = "dev.swwm.dock"
 
     static var isInstalled: Bool { FileManager.default.fileExists(atPath: plistPath) }
 
@@ -46,7 +46,7 @@ enum ShadowInstaller {
         if runStatus("/bin/launchctl", "bootstrap", "system", plistPath) != 0 {
             die("launchctl bootstrap failed", 1)
         }
-        print("Shadow module installed. It loads into Dock at boot and after each Dock restart.")
+        print("Dock module installed. It loads into Dock at boot and after each Dock restart (killall Dock to load it now).")
         exit(0)
     }
 
@@ -55,7 +55,7 @@ enum ShadowInstaller {
         _ = runStatus("/bin/launchctl", "bootout", "system/\(label)")
         run("/bin/rm", "-f", plistPath)
         run("/bin/rm", "-rf", supportDir)
-        print("Shadow module removed. Dock keeps the payload until it restarts (killall Dock to unload now).")
+        print("Dock module removed. Dock keeps the payload until it restarts (killall Dock to unload now).")
         exit(0)
     }
 
@@ -76,7 +76,7 @@ enum ShadowInstaller {
         }
         guard missing.isEmpty else {
             die("""
-                the shadow module needs \(missing.joined(separator: ", ")) to be set.
+                the Dock module needs \(missing.joined(separator: ", ")) to be set.
                 From Recovery (csrutil needs Recovery; the boot-arg needs `sudo nvram boot-args=-arm64e_preview_abi`):
                   csrutil enable --without fs --without debug --without nvram
                 Then reboot and run this again.

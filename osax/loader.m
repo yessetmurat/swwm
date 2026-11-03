@@ -1,4 +1,4 @@
-// swwm shadow module loader: injects osax/payload into Dock.
+// swwm Dock module loader: injects osax/payload into Dock.
 //
 // Based on yabai's src/osax/loader.m (MIT License, Copyright (c) 2019
 // Åsmund Vikane; see LICENSE.yabai). Changes for swwm: the payload path comes

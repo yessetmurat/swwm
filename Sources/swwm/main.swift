@@ -20,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var loader: ConfigLoader?
     private var signals: [DispatchSourceSignal] = []
     private var displayChange: DispatchWorkItem?
+    private var dockWatch: NSKeyValueObservation?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Up before the Accessibility wait, so the CLI and a second launch see swwm.
@@ -59,10 +60,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             manager.applyShadowAll()
             bar.rebuild()
         }
-        manager.shadowModuleInstalled = ShadowInstaller.isInstalled
+        manager.dockModuleInstalled = DockModuleInstaller.isInstalled
         manager.onShadowUnavailable = { [weak self] in
-            self?.notify("Window shadows are unavailable: the shadow module did not answer. "
-                + "See \(ShadowInstaller.logPath).")
+            self?.notify("Window shadows are unavailable: the Dock module did not answer. "
+                + "See \(DockModuleInstaller.logPath).")
         }
         manager.onChange = { bar.setNeedsUpdate() }
         tap.onMouseMoved = { bar.cursorMoved($0) }
@@ -75,12 +76,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let status = SystemStatus { bar.update(status: $0) }
         status.start()
         self.status = status
-        NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: .main
-        ) { note in
-            guard (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?
-                .bundleIdentifier == "com.apple.dock" else { return }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { manager.applyShadowAll() }
+        // A new Dock drops the shadows; its payload comes up a few seconds later.
+        // Dock is not a regular app: no launch notification, only this list.
+        dockWatch = NSWorkspace.shared.observe(\.runningApplications, options: [.new]) { _, change in
+            guard change.newValue?.contains(where: { $0.bundleIdentifier == "com.apple.dock" }) == true else { return }
+            DispatchQueue.main.async { manager.dock.whenReachable { manager.applyShadowAll() } }
         }
 
         observer.start()
@@ -133,8 +133,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 // With arguments this binary is the CLI; without, the window manager.
 let cliArgs = CommandLine.arguments.dropFirst().filter { !$0.hasPrefix("-psn_") }
 switch cliArgs.first {
-case "--install-shadows": ShadowInstaller.install()
-case "--uninstall-shadows": ShadowInstaller.uninstall()
+case "--install-dock-module": DockModuleInstaller.install()
+case "--uninstall-dock-module": DockModuleInstaller.uninstall()
 default: break
 }
 if !cliArgs.isEmpty { Client.run(Array(cliArgs)) }

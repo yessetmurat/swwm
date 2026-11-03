@@ -1,0 +1,103 @@
+//
+//  DockClient.swift
+//  swwm
+//
+//  Created by Yesset Murat on 03.11.2026.
+//
+
+import Foundation
+import SwwmCore
+
+/// Sends shadow and window-level requests to the payload loaded in Dock.
+/// Unreachable when the module is not installed or Dock has not been injected
+/// yet; an older payload rejects level requests.
+final class DockClient {
+
+    private let queue = DispatchQueue(label: "dev.swwm.dock")
+    private var path: String { (NSTemporaryDirectory() as NSString).appendingPathComponent(DockSocket.name) }
+
+    /// Off the main thread; `done` (if given) runs on the main queue.
+    func setShadow(_ id: WindowID, _ shadow: Bool, done: ((Bool) -> Void)? = nil) {
+        queue.async { [path] in
+            let ok = Self.send(shadowMessage(window: id, shadow: shadow), to: path)
+            if let done { DispatchQueue.main.async { done(ok) } }
+        }
+    }
+
+    /// Blocks until every message is sent or times out; for quit.
+    func setShadowsSync(_ items: [(id: WindowID, shadow: Bool)]) {
+        queue.sync { [path] in
+            for i in items { _ = Self.send(shadowMessage(window: i.id, shadow: i.shadow), to: path) }
+        }
+    }
+
+    /// Off the main thread; `done` (if given) runs on the main queue.
+    func setLevel(_ id: WindowID, _ level: Int32, done: ((Bool) -> Void)? = nil) {
+        queue.async { [path] in
+            let ok = Self.send(levelMessage(window: id, level: level), to: path)
+            if let done { DispatchQueue.main.async { done(ok) } }
+        }
+    }
+
+    /// Blocks until every message is sent or times out; for quit.
+    func setLevelsSync(_ items: [(id: WindowID, level: Int32)]) {
+        queue.sync { [path] in
+            for i in items { _ = Self.send(levelMessage(window: i.id, level: i.level), to: path) }
+        }
+    }
+
+    /// Calls `done` on the main queue once the payload accepts connections:
+    /// after a Dock restart the loader injects it a few seconds later. Gives
+    /// up after `timeout` seconds.
+    func whenReachable(timeout: TimeInterval = 30, _ done: @escaping () -> Void) {
+        queue.async { [path] in
+            let end = Date().addingTimeInterval(timeout)
+            while Date() < end {
+                let fd = Self.connect(to: path)
+                if fd >= 0 {
+                    close(fd)
+                    DispatchQueue.main.async(execute: done)
+                    return
+                }
+                Thread.sleep(forTimeInterval: 0.5)
+            }
+        }
+    }
+
+    private static func send(_ bytes: [UInt8], to path: String) -> Bool {
+        let fd = connect(to: path)
+        guard fd >= 0 else { return false }
+        defer { close(fd) }
+        let sent = bytes.withUnsafeBytes { Darwin.send(fd, $0.baseAddress, $0.count, 0) }
+        guard sent == bytes.count else { return false }
+        var reply: UInt8 = 0
+        return recv(fd, &reply, 1, 0) == 1 && reply == 1
+    }
+
+    /// A connected socket, or -1.
+    private static func connect(to path: String) -> Int32 {
+        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard fd >= 0 else { return -1 }
+        var on: Int32 = 1
+        setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
+        var tv = timeval(tv_sec: 0, tv_usec: 200_000)
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+        setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+
+        var addr = sockaddr_un()
+        addr.sun_family = sa_family_t(AF_UNIX)
+        withUnsafeMutableBytes(of: &addr.sun_path) { dst in
+            path.utf8CString.withUnsafeBytes { src in
+                dst.copyMemory(from: UnsafeRawBufferPointer(rebasing: src.prefix(dst.count - 1)))
+            }
+        }
+        let connected = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+        }
+        guard connected == 0 else {
+            close(fd)
+            return -1
+        }
+        return fd
+    }
+}

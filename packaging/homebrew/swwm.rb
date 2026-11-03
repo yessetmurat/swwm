@@ -31,7 +31,7 @@ class Swwm < Formula
       Then allow swwm in System Settings > Privacy & Security > Accessibility.
 
       Optional, removes window shadows (needs SIP partly disabled):
-        sudo swwm --install-shadows
+        sudo swwm --install-dock-module
       Re-run it after upgrading swwm.
     EOS
   end

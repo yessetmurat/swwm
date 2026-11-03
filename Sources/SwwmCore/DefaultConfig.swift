@@ -18,7 +18,7 @@ extension Config {
     focus-follows-mouse = true # with autoraise
     mouse-follows-focus = true
     mouse-modifier = "alt"     # + left drag moves, + right drag resizes
-    # Needs the optional shadow module (sudo swwm --install-shadows):
+    # Needs the optional Dock module (sudo swwm --install-dock-module):
     # "float" - only floating windows keep a shadow, "off" - none, "on" - untouched.
     window-shadow = "float"
 

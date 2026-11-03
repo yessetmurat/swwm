@@ -96,7 +96,7 @@ Mouse: hold `alt` and drag with the left button to move a window (drop it on
 another window to swap), with the right button to resize. Dragging by the
 title bar or resizing by an edge works too.
 
-## Window shadows
+## Dock module
 
 Optional. macOS has no public way to remove another app's window shadow, so
 this uses a small payload loaded into Dock. It is
@@ -124,17 +124,17 @@ To set them up (needs a reboot into recoveryOS; do it once):
    restrictions as `disabled`, and `nvram boot-args` contains
    `-arm64e_preview_abi`.
 
-This weakens part of SIP, so only do it if you want the shadow module; swwm
+This weakens part of SIP, so only do it if you want the Dock module; swwm
 works fully without it. To undo later, boot into recoveryOS and run
 `csrutil enable`, then `sudo nvram -d boot-args` from macOS.
 
 ```sh
-sudo swwm --install-shadows     # installs a root launchd daemon; re-run after upgrading swwm
-sudo swwm --uninstall-shadows
+sudo swwm --install-dock-module     # installs a root launchd daemon; re-run after upgrading swwm
+sudo swwm --uninstall-dock-module
 ```
 
 The daemon loads the payload into Dock at boot and after every Dock restart,
-logging to `/Library/Logs/swwm-shadows.log`. Set the policy in the config:
+logging to `/Library/Logs/swwm-dock.log`. Set the policy in the config:
 
 ```toml
 [settings]
@@ -179,9 +179,9 @@ A Developer ID Application certificate must be in the keychain.
 make release VERSION=<x.y.z> SIGN_IDENTITY="<Developer ID Application identity>" NOTARY_PROFILE=<profile>
 ```
 
-This signs `bin/swwm` and the shadow-module binaries (hardened runtime,
+This signs `bin/swwm` and the Dock module binaries (hardened runtime,
 timestamp), notarizes `bin/swwm`, writes `build/swwm-<x.y.z>.tar.gz` and prints
-its SHA-256. Only `bin/swwm` is notarized: the arm64e shadow binaries are not
+its SHA-256. Only `bin/swwm` is notarized: the arm64e Dock module binaries are not
 launched through Gatekeeper (loaded into Dock / run by root) and only work with
 SIP partly disabled, so keeping them out of the notary submission avoids
 failing it and leaving swwm without a ticket. Upload the tarball to a

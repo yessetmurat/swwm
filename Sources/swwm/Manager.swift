@@ -23,8 +23,8 @@ final class Manager {
     private(set) var windows: [WindowID: AXWindow] = [:]
     private var hidden: [WindowID: MonitorID] = [:]      // window -> display it is hidden on
     private var titles: [WindowID: String] = [:]           // cached for queries, kept by kAXTitleChanged
-    let shadows = ShadowClient()
-    var shadowModuleInstalled = false                      // set at start from ShadowInstaller.isInstalled
+    let dock = DockClient()
+    var dockModuleInstalled = false                        // set at start from DockModuleInstaller.isInstalled
     private var shadowNoticeShown = false
     var onShadowUnavailable: () -> Void = {}
     private var remembered: [WindowID: String] = [:]     // workspace of minimized/hidden windows
@@ -161,8 +161,8 @@ final class Manager {
     func applyShadow(_ id: WindowID) {
         let floating = world.workspace(containing: id)?.floating[id] != nil
         guard let want = shadowWanted(floating: floating, mode: settings.windowShadow) else { return }
-        shadows.set(id, shadow: want) { [weak self] ok in
-            guard let self, !ok, self.shadowModuleInstalled, !self.shadowNoticeShown else { return }
+        dock.setShadow(id, want) { [weak self] ok in
+            guard let self, !ok, self.dockModuleInstalled, !self.shadowNoticeShown else { return }
             self.shadowNoticeShown = true
             self.onShadowUnavailable()
         }
@@ -257,7 +257,7 @@ final class Manager {
         }
         hidden = [:]
         if settings.windowShadow != .on {
-            shadows.setSync(windows.keys.map { (id: $0, shadow: true) })
+            dock.setShadowsSync(windows.keys.map { (id: $0, shadow: true) })
         }
     }
 

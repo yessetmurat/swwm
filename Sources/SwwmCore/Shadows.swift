@@ -30,7 +30,23 @@ public func shadowMessage(window: WindowID, shadow: Bool) -> [UInt8] {
         + [shadow ? 1 : 0]
 }
 
-public enum ShadowSocket {
+/// Window levels swwm sets through the payload: floating windows stay above tiles.
+public enum WindowLevel {
+
+    public static let normal: Int32 = 0
+    public static let floating: Int32 = 3  // kCGFloatingWindowLevel
+}
+
+/// A request to the payload in Dock: little-endian int16 length of the rest,
+/// opcode 0x02, uint32 window id, int32 level.
+public func levelMessage(window: WindowID, level: Int32) -> [UInt8] {
+    let id = window.littleEndian, l = level.littleEndian
+    return [0x09, 0x00, 0x02]
+        + withUnsafeBytes(of: id) { Array($0) }
+        + withUnsafeBytes(of: l) { Array($0) }
+}
+
+public enum DockSocket {
 
     /// In the user's temporary directory, shared by swwm and Dock (same user).
     public static let name = "swwm-dock.sock"

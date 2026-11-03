@@ -16,7 +16,7 @@ dev:
 	mkdir -p $(STAGE)/bin $(STAGE)/share/swwm/fonts
 	cp .build/release/swwm $(STAGE)/bin/swwm
 	cp Resources/Fonts/* $(STAGE)/share/swwm/fonts/
-	# Optional shadow module: an arm64e payload for Dock and its injector.
+	# Optional Dock module: an arm64e payload for Dock and its injector.
 	mkdir -p $(STAGE)/share/swwm/osax
 	xcrun clang osax/payload.m -shared -fPIC -O2 -Wall -Wextra -fvisibility=hidden -arch arm64e \
 		-mmacosx-version-min=15.0 -F/System/Library/PrivateFrameworks -framework SkyLight -framework Foundation \
