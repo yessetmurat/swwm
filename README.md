@@ -172,20 +172,17 @@ again (`tccutil` cannot reset it: swwm is a plain binary, not an app bundle).
 
 ## Release
 
-Once, store notarization credentials:
-`xcrun notarytool store-credentials <profile> --apple-id <apple id> --team-id <team id>`.
 A Developer ID Application certificate must be in the keychain.
 
 ```sh
-make release VERSION=<x.y.z> SIGN_IDENTITY="<Developer ID Application identity>" NOTARY_PROFILE=<profile>
+make release VERSION=<x.y.z> SIGN_IDENTITY="<Developer ID Application identity>"
 ```
 
 This signs `bin/swwm` and the Dock module binaries (hardened runtime,
-timestamp), notarizes `bin/swwm`, writes `build/swwm-<x.y.z>.tar.gz` and prints
-its SHA-256. Only `bin/swwm` is notarized: the arm64e Dock module binaries are not
-launched through Gatekeeper (loaded into Dock / run by root) and only work with
-SIP partly disabled, so keeping them out of the notary submission avoids
-failing it and leaving swwm without a ticket. Upload the tarball to a
+timestamp), writes `build/swwm-<x.y.z>.tar.gz` and prints its SHA-256. Nothing
+is notarized: Homebrew does not quarantine formula downloads, so Gatekeeper
+never checks swwm. A tarball downloaded by a browser is quarantined; clear it
+with `xattr -dr com.apple.quarantine` before running. Upload the tarball to a
 GitHub release `v<x.y.z>`, then update `url` and `sha256` in the tap's
 `Formula/swwm.rb` (template: `packaging/homebrew/swwm.rb`).
 
