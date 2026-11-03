@@ -219,9 +219,18 @@ final class Manager {
     /// A sheet of a raised window, or a dialog swwm does not manage of an app
     /// with a raised window, would open under it: it goes up too. Closed ones
     /// drop out of `raised` here, so the set stays small.
-    func childWindowAppeared(_ element: AXUIElement, pid: pid_t) {
+    func childWindowAppeared(_ element: AXUIElement, pid: pid_t, attempt: Int = 0) {
         var id: CGWindowID = 0
-        guard _AXUIElementGetWindow(element, &id) == .success, id != 0, windows[id] == nil, !raised.contains(id) else { return }
+        guard _AXUIElementGetWindow(element, &id) == .success, id != 0 else {
+            // A sheet is reported before it has a window number (System Settings).
+            if attempt < 3 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+                    self?.childWindowAppeared(element, pid: pid, attempt: attempt + 1)
+                }
+            }
+            return
+        }
+        guard windows[id] == nil, !raised.contains(id) else { return }
         if element.attribute(kAXRoleAttribute) == kAXSheetRole as String {
             var parent: CGWindowID = 0
             guard let p: AXUIElement = element.attribute(kAXParentAttribute),
@@ -466,7 +475,11 @@ final class Manager {
     /// A focus change reported by an app. A window that was not manageable
     /// when it appeared (fullscreen, subrole not ready yet) gets another try.
     func windowFocusChanged(_ w: AXWindow) {
-        if windows[w.id] == nil { windowCreated(w) }
+        if windows[w.id] == nil {
+            windowCreated(w)
+            // A sheet takes focus when it opens: a second chance to raise it.
+            if windows[w.id] == nil { childWindowAppeared(w.element, pid: w.pid) }
+        }
         windowFocused(w.id)
     }
 
