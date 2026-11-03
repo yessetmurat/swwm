@@ -6,7 +6,6 @@
 //
 
 import AppKit
-import ServiceManagement
 import SwwmCore
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -16,11 +15,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var tap: EventTap?
     private var bar: BarController?
     private var status: SystemStatus?
+    private var server: CommandServer?
     private var loader: ConfigLoader?
     private var signals: [DispatchSourceSignal] = []
     private var displayChange: DispatchWorkItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Up before the Accessibility wait, so the CLI and a second launch see swwm.
+        let server = CommandServer { [weak self] request in
+            self?.manager?.handle(request) ?? .error("waiting for Accessibility permission")
+        }
+        server.start()
+        self.server = server
         let prompt = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
         if AXIsProcessTrustedWithOptions(prompt) {
             start()
@@ -86,15 +92,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             s.resume()
             signals.append(s)
         }
-
-        if SMAppService.mainApp.status != .enabled {
-            do { try SMAppService.mainApp.register() } catch { NSLog("swwm: login item: \(error)") }
-        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        server?.stop()
         manager?.restoreAll()
     }
+}
+
+// With arguments this binary is the CLI; without, the window manager.
+let cliArgs = CommandLine.arguments.dropFirst().filter { !$0.hasPrefix("-psn_") }
+if !cliArgs.isEmpty { Client.run(Array(cliArgs)) }
+if Client.isRunning() {
+    FileHandle.standardError.write(Data("swwm is already running\n".utf8))
+    exit(1)
 }
 
 let app = NSApplication.shared

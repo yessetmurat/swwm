@@ -17,23 +17,38 @@ scripts.
 
 ## Requirements
 
-- macOS 15 or later
+- macOS 15 or later, Apple Silicon
 - Accessibility permission
-- An Apple Development certificate to sign the build (a stable signature
-  keeps the Accessibility permission across rebuilds)
 
-## Build and run
+## Install
 
 ```sh
-make app SIGN_TEAM=<team id>          # or SIGN_IDENTITY=<SHA-1 from `security find-identity -v -p codesigning`>
-open build/swwm.app
+brew tap <owner>/<tap>
+brew install swwm
+brew services start swwm
 ```
 
-On first launch, grant Accessibility in System Settings → Privacy & Security →
-Accessibility; swwm starts managing windows as soon as it is granted. It adds
-itself to the login items.
+Then allow swwm in System Settings → Privacy & Security → Accessibility;
+swwm starts managing windows as soon as it is granted. `brew services` starts
+it at login and restarts it if it crashes; `swwm quit` (or `ctrl-alt-q`) stops
+it until the next login or `brew services restart swwm`.
 
-`make test` runs the unit tests.
+## CLI
+
+The same `swwm` binary is the command line: with arguments it talks to the
+running swwm over a socket in the user's temporary directory.
+
+```sh
+swwm workspace q            # any command from the bindings: focus left, move-to-workspace 2, …
+swwm reload                 # re-read the config
+swwm quit
+swwm query windows          # JSON; also: workspaces, monitors
+swwm query windows | jq -r '.[] | select(.focused) | .app'
+```
+
+Exit codes: `0` ok, `1` rejected (for example an unknown workspace, or swwm
+already running when started without arguments), `2` swwm is not running,
+`64` usage error.
 
 ## Config
 
@@ -89,6 +104,50 @@ title bar or resizing by an edge works too.
    top edge to reach the macOS menu.
 3. Keep one native Space per display (remove the others in Mission Control);
    swwm's workspaces replace them.
-4. SIP can be turned back on: swwm does not need the yabai scripting addition.
+4. If you ran a development build that was an `.app`, remove its entry in
+   System Settings → General → Login Items.
+5. SIP can be turned back on: swwm does not need the yabai scripting addition.
    A later optional module for removing window shadows will need it partly
    disabled.
+
+## Development
+
+Needs Xcode and a code-signing certificate (an Apple Development one is
+enough). A stable signature keeps the Accessibility permission across rebuilds.
+
+```sh
+make dev SIGN_TEAM=<team id>    # build/swwm/bin/swwm + share/swwm/fonts, signed
+make run SIGN_TEAM=<team id>    # start it through launchd (stop a brew service first)
+make stop
+make test
+```
+
+`SIGN_IDENTITY=<SHA-1 or name>` works instead of `SIGN_TEAM`. `make run`
+starts swwm through launchd, so the Accessibility permission belongs to swwm
+and not to the terminal.
+
+A development build and the Homebrew build are signed by different
+certificates, so macOS treats them as different programs with the same name:
+after switching from one to the other, the Accessibility switch looks on but
+does not apply. Reset it with `tccutil reset Accessibility dev.swwm.swwm` and
+allow swwm again.
+
+## Release
+
+Once, store notarization credentials:
+`xcrun notarytool store-credentials <profile> --apple-id <apple id> --team-id <team id>`.
+A Developer ID Application certificate must be in the keychain.
+
+```sh
+make release VERSION=<x.y.z> SIGN_IDENTITY="<Developer ID Application identity>" NOTARY_PROFILE=<profile>
+```
+
+This signs `bin/swwm` (hardened runtime, timestamp), notarizes it, writes
+`build/swwm-<x.y.z>.tar.gz` and prints its SHA-256. Upload the tarball to a
+GitHub release `v<x.y.z>`, then update `url` and `sha256` in the tap's
+`Formula/swwm.rb` (template: `packaging/homebrew/swwm.rb`).
+
+## License
+
+MIT, see `LICENSE`. The bundled IBM Plex fonts are under the SIL Open Font
+License (`Resources/Fonts/OFL.txt`).

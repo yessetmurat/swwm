@@ -52,8 +52,12 @@ final class ConfigLoader {
         stream = s
     }
 
-    func reload() {
-        if let c = read() { onChange(c) }
+    /// Re-reads the file; returns the error message when it is not applied.
+    @discardableResult
+    func reload() -> String? {
+        guard let c = read() else { return shownError ?? "cannot read \(Self.file.path)" }
+        onChange(c)
+        return nil
     }
 
     private func scheduleReload() {

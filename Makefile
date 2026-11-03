@@ -1,25 +1,48 @@
-# Builds build/swwm.app. Signing needs a stable identity so the Accessibility
-# permission survives rebuilds. Pick it by team or directly:
-#   make app SIGN_TEAM=<team id>
-#   make app SIGN_IDENTITY=<SHA-1 or name from `security find-identity -v -p codesigning`>
-APP := build/swwm.app
+# swwm is a plain binary: bin/swwm plus share/swwm/fonts (Homebrew's layout).
+# Signing needs a stable identity so the Accessibility permission survives
+# rebuilds. Pick it by team or directly:
+#   make dev SIGN_TEAM=<team id>
+#   make dev SIGN_IDENTITY=<SHA-1 or name from `security find-identity -v -p codesigning`>
 SIGN_IDENTITY ?= $(if $(SIGN_TEAM),$(shell scripts/sign-identity $(SIGN_TEAM)))
+STAGE := build/swwm
+CODESIGN_FLAGS ?=
 
-.PHONY: app run test clean
+.PHONY: dev run stop release test clean
 
-app:
+dev:
 	@test -n "$(SIGN_IDENTITY)" || { echo "set SIGN_TEAM or SIGN_IDENTITY (no identity found)"; exit 1; }
 	swift build -c release
-	rm -rf $(APP)
-	mkdir -p $(APP)/Contents/MacOS
-	cp .build/release/swwm $(APP)/Contents/MacOS/swwm
-	cp Resources/Info.plist $(APP)/Contents/Info.plist
-	mkdir -p $(APP)/Contents/Resources/Fonts
-	cp Resources/Fonts/* $(APP)/Contents/Resources/Fonts/
-	codesign --force --sign "$(SIGN_IDENTITY)" $(APP)
+	rm -rf $(STAGE)
+	mkdir -p $(STAGE)/bin $(STAGE)/share/swwm/fonts
+	cp .build/release/swwm $(STAGE)/bin/swwm
+	cp Resources/Fonts/* $(STAGE)/share/swwm/fonts/
+	# Debug-map entries hold the build machine's absolute paths; strip before signing.
+	strip -S $(STAGE)/bin/swwm
+	codesign --force --options runtime $(CODESIGN_FLAGS) --identifier dev.swwm.swwm --sign "$(SIGN_IDENTITY)" $(STAGE)/bin/swwm
 
-run: app
-	open $(APP)
+# Started by launchd, swwm is its own responsible process: the Accessibility
+# permission is asked for swwm, not for the terminal.
+run: dev stop
+	launchctl submit -l dev.swwm -- $(CURDIR)/$(STAGE)/bin/swwm
+
+stop:
+	-@launchctl remove dev.swwm 2>/dev/null
+	@sleep 1
+
+# Signed with Developer ID (hardened runtime, timestamp) and notarized. The
+# notary profile is stored once with `xcrun notarytool store-credentials`.
+#   make release VERSION=<x.y.z> SIGN_IDENTITY=<Developer ID Application identity> NOTARY_PROFILE=<name>
+release:
+	@test -n "$(VERSION)" -a -n "$(SIGN_IDENTITY)" -a -n "$(NOTARY_PROFILE)" || \
+		{ echo "usage: make release VERSION=<x.y.z> SIGN_IDENTITY=<Developer ID Application identity> NOTARY_PROFILE=<name>"; exit 1; }
+	@security find-identity -v -p codesigning | grep -F "$(SIGN_IDENTITY)" | grep -q "Developer ID Application" || \
+		{ echo "SIGN_IDENTITY must be a Developer ID Application identity"; exit 1; }
+	$(MAKE) dev SIGN_IDENTITY="$(SIGN_IDENTITY)" CODESIGN_FLAGS=--timestamp
+	rm -f build/swwm-notarize.zip
+	ditto -c -k --keepParent $(STAGE) build/swwm-notarize.zip
+	xcrun notarytool submit build/swwm-notarize.zip --keychain-profile "$(NOTARY_PROFILE)" --wait
+	tar --uid 0 --gid 0 --uname root --gname wheel -czf build/swwm-$(VERSION).tar.gz -C $(STAGE) bin share
+	shasum -a 256 build/swwm-$(VERSION).tar.gz
 
 test:
 	swift test

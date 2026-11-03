@@ -16,12 +16,13 @@ let log = Logger(subsystem: "dev.swwm.swwm", category: "events")
 final class Manager {
 
     let world: World
-    var onReload: () -> Void = {}
+    var onReload: () -> String? = { nil }               // error message when the config is not applied
     var onQuit: () -> Void = {}
     var onChange: () -> Void = {}                         // something the bar shows may have changed
 
     private(set) var windows: [WindowID: AXWindow] = [:]
     private var hidden: [WindowID: MonitorID] = [:]      // window -> display it is hidden on
+    private var titles: [WindowID: String] = [:]           // cached for queries, kept by kAXTitleChanged
     private var remembered: [WindowID: String] = [:]     // workspace of minimized/hidden windows
     private var history = FocusHistory()
     var focused: WindowID? { history.current }
@@ -70,6 +71,7 @@ final class Manager {
             ?? world.monitor(at: point).flatMap(world.activeWorkspace(on:))
         guard let target else { return false }
         windows[w.id] = w
+        titles[w.id] = w.title
         world.add(w.id, to: target, floatingFrame: floats ? frame : nil)
         return true
     }
@@ -94,6 +96,7 @@ final class Manager {
         history.removed(at: now)
         let m = world.remove(id)
         windows[id] = nil
+        titles[id] = nil
         hidden[id] = nil
         guard let m else { return }
         layout(m)
@@ -306,7 +309,7 @@ final class Manager {
             p.arguments = ["-c", line]
             try? p.run()
         case .reload:
-            onReload()
+            _ = onReload()
         case .quit:
             onQuit()
         }
@@ -435,6 +438,42 @@ final class Manager {
     func setFrame(_ id: WindowID, _ r: CGRect) { windows[id]?.setFrame(r) }
 
     func appName(of id: WindowID) -> String? { windows[id]?.appName }
+
+    /// From what swwm already knows: no AX round-trips, so a hung app cannot
+    /// stall a query (and the event tap on the main thread).
+    func windowInfo(_ id: WindowID) -> WindowInfo? {
+        windows[id].map {
+            WindowInfo(app: $0.appName, title: titles[id] ?? "", frame: world.layoutFrame(of: id, gap: settings.gap) ?? .zero)
+        }
+    }
+
+    func titleChanged(_ id: WindowID, _ title: String) {
+        if windows[id] != nil { titles[id] = title }
+    }
+
+    /// A CLI request. `quit` answers first and quits on the next turn, so the
+    /// client still gets its reply.
+    func handle(_ request: Request) -> Reply {
+        switch request {
+        case .query(.windows):
+            return .ok(json(world.windowSnapshots(focused: focused, info: windowInfo)))
+        case .query(.workspaces):
+            return .ok(json(world.workspaceSnapshots()))
+        case .query(.monitors):
+            return .ok(json(world.monitorSnapshots(focusedMonitor: focusedMonitor)))
+        case .command(.workspace(let name)) where world.workspace(named: name) == nil,
+             .command(.moveToWorkspace(let name)) where world.workspace(named: name) == nil:
+            return .error("unknown workspace '\(name)'")
+        case .command(.quit):
+            DispatchQueue.main.async { [self] in onQuit() }
+            return .ok()
+        case .command(.reload):
+            return onReload().map { .error("config not applied: \($0)") } ?? .ok()
+        case .command(let c):
+            run(c)
+            return .ok()
+        }
+    }
 
     func setPosition(_ id: WindowID, _ p: CGPoint) { windows[id]?.setPosition(p) }
 

@@ -163,6 +163,15 @@ public final class World {
         spaces.values.first { $0.tree.contains(w) || $0.floating[w] != nil }
     }
 
+    /// Where swwm puts `w` when its workspace is shown: the tree's frame, the
+    /// whole work area when zoomed, or the saved frame when floating.
+    public func layoutFrame(of w: WindowID, gap: CGFloat) -> CGRect? {
+        guard let ws = workspace(containing: w), let m = home[ws.name] else { return nil }
+        if let f = ws.floating[w] { return f }
+        let area = workArea(of: m)
+        return ws.zoomed == w ? area : ws.tree.frames(in: area, gap: gap)[w]
+    }
+
     /// True when `w`'s workspace is the one its display shows.
     public func isVisible(_ w: WindowID) -> Bool {
         guard let ws = workspace(containing: w), let m = home[ws.name] else { return false }

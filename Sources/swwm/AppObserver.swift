@@ -88,7 +88,8 @@ final class AppObserver {
     func watch(_ w: AXWindow) {
         guard let observer = observers[w.pid] else { return }
         let refcon = UnsafeMutableRawPointer(bitPattern: UInt(w.id))
-        for n in [kAXUIElementDestroyedNotification, kAXWindowMiniaturizedNotification, kAXWindowDeminiaturizedNotification] {
+        for n in [kAXUIElementDestroyedNotification, kAXWindowMiniaturizedNotification, kAXWindowDeminiaturizedNotification,
+                  kAXTitleChangedNotification] {
             AXObserverAddNotification(observer, w.element, n as CFString, refcon)
         }
     }
@@ -111,6 +112,8 @@ final class AppObserver {
             if let id { manager.windowGone(id) }
         case kAXWindowMiniaturizedNotification:
             if let id { manager.windowMinimized(id) }
+        case kAXTitleChangedNotification:
+            if let id { manager.titleChanged(id, element.attribute(kAXTitleAttribute) ?? "") }
         case kAXWindowDeminiaturizedNotification:
             guard let app, let w = AXWindow(element, app: app) else { return }
             manager.windowCreated(w)

@@ -155,3 +155,17 @@ func world(_ ms: [MonitorInfo], _ config: Config = .default) -> World {
     #expect(!w.isVisible(10))
     #expect(!w.isVisible(99))
 }
+
+@Test func layoutFrames() {
+    let w = world([B])
+    let area = w.workArea(of: 1)
+    w.add(1, to: "1", floatingFrame: nil)
+    w.add(2, to: "1", floatingFrame: nil)
+    let f = CGRect(x: 100, y: 100, width: 300, height: 200)
+    w.add(3, to: "q", floatingFrame: f)
+    #expect(w.layoutFrame(of: 1, gap: 8) == CGRect(x: area.minX, y: area.minY, width: (area.width - 8) / 2, height: area.height))
+    #expect(w.layoutFrame(of: 3, gap: 8) == f)  // floating, even on a hidden workspace
+    w.workspace(named: "1")?.zoomed = 2
+    #expect(w.layoutFrame(of: 2, gap: 8) == area)
+    #expect(w.layoutFrame(of: 99, gap: 8) == nil)
+}

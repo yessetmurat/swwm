@@ -11,8 +11,11 @@ import SwwmCore
 /// The bar's fonts ship inside the app; nothing has to be installed.
 enum Fonts {
 
+    /// Fonts live in `share/swwm/fonts` next to `bin/` (Homebrew's layout and
+    /// `make dev`'s); the executable may be reached through a symlink.
     static func registerBundled() {
-        guard let dir = Bundle.main.resourceURL?.appending(path: "Fonts"),
+        guard let exe = Bundle.main.executableURL?.resolvingSymlinksInPath(),
+              case let dir = exe.deletingLastPathComponent().deletingLastPathComponent().appending(path: "share/swwm/fonts"),
               let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else {
             return
         }
