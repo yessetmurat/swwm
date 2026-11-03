@@ -23,6 +23,10 @@ final class Manager {
     private(set) var windows: [WindowID: AXWindow] = [:]
     private var hidden: [WindowID: MonitorID] = [:]      // window -> display it is hidden on
     private var titles: [WindowID: String] = [:]           // cached for queries, kept by kAXTitleChanged
+    let shadows = ShadowClient()
+    var shadowModuleInstalled = false                      // set at start from ShadowInstaller.isInstalled
+    private var shadowNoticeShown = false
+    var onShadowUnavailable: () -> Void = {}
     private var remembered: [WindowID: String] = [:]     // workspace of minimized/hidden windows
     private var history = FocusHistory()
     var focused: WindowID? { history.current }
@@ -44,6 +48,7 @@ final class Manager {
             adopt(app)
         }
         layoutAll()
+        applyShadowAll()
         if let app = NSWorkspace.shared.frontmostApplication { appActivated(app) }
     }
 
@@ -73,7 +78,23 @@ final class Manager {
         windows[w.id] = w
         titles[w.id] = w.title
         world.add(w.id, to: target, floatingFrame: floats ? frame : nil)
+        applyShadow(w.id)
         return true
+    }
+
+    /// Sets a window's shadow to what `window-shadow` wants, if anything.
+    func applyShadow(_ id: WindowID) {
+        let floating = world.workspace(containing: id)?.floating[id] != nil
+        guard let want = shadowWanted(floating: floating, mode: settings.windowShadow) else { return }
+        shadows.set(id, shadow: want) { [weak self] ok in
+            guard let self, !ok, self.shadowModuleInstalled, !self.shadowNoticeShown else { return }
+            self.shadowNoticeShown = true
+            self.onShadowUnavailable()
+        }
+    }
+
+    func applyShadowAll() {
+        for id in windows.keys { applyShadow(id) }
     }
 
     /// Removes a window; when it had focus, focus goes to another window of the same display.
@@ -159,6 +180,9 @@ final class Manager {
                 ?? ws.tree.frames(in: area, gap: settings.gap)[id] ?? area)
         }
         hidden = [:]
+        if settings.windowShadow != .on {
+            shadows.setSync(windows.keys.map { (id: $0, shadow: true) })
+        }
     }
 
     func displaysChanged() {
@@ -358,6 +382,7 @@ final class Manager {
             windows[f]?.raise()
         }
         layout(m)
+        applyShadow(f)
         focus(f, warp: false)
     }
 
@@ -492,6 +517,7 @@ final class Manager {
             world.move(id, to: target)
             layout(from)
             layout(to)
+            applyShadow(id)
             return
         }
         if let other = windowUnder(p, excluding: id), ws.tree.contains(other) {

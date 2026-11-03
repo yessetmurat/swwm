@@ -16,6 +16,7 @@ public struct Settings: Equatable, Sendable {
     public var focusFollowsMouse = true
     public var mouseFollowsFocus = true
     public var mouseModifier: Modifiers = .alt
+    public var windowShadow: ShadowMode = .float
     public init() {}
 }
 
@@ -109,7 +110,14 @@ public struct Config: Sendable {
         try checkKeys(root, ["settings", "monitor", "bindings", "rule", "bar"], in: "config")
 
         if let t = try table(root, "settings") {
-            try checkKeys(t, ["gap", "padding", "bar-height", "focus-follows-mouse", "mouse-follows-focus", "mouse-modifier"], in: "settings")
+            try checkKeys(t, ["gap", "padding", "bar-height", "focus-follows-mouse", "mouse-follows-focus", "mouse-modifier",
+                              "window-shadow"], in: "settings")
+            if let s = try string(t, "window-shadow") {
+                guard let mode = ShadowMode(rawValue: s) else {
+                    throw ConfigError("settings.window-shadow: '\(s)' must be \"float\", \"off\" or \"on\"")
+                }
+                c.settings.windowShadow = mode
+            }
             if let v = try number(t, "gap") { c.settings.gap = v }
             if let v = try number(t, "padding") { c.settings.padding = v }
             if let v = try number(t, "bar-height") { c.settings.barHeight = v }

@@ -16,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var bar: BarController?
     private var status: SystemStatus?
     private var server: CommandServer?
+    private var shadowAlert: NSAlert?
     private var loader: ConfigLoader?
     private var signals: [DispatchSourceSignal] = []
     private var displayChange: DispatchWorkItem?
@@ -55,7 +56,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             manager.world.apply(config: config)
             tap.update(config: config)
             manager.layoutAll()
+            manager.applyShadowAll()
             bar.rebuild()
+        }
+        manager.shadowModuleInstalled = ShadowInstaller.isInstalled
+        manager.onShadowUnavailable = { [weak self] in
+            self?.notify("Window shadows are unavailable: the shadow module did not answer. "
+                + "See \(ShadowInstaller.logPath).")
         }
         manager.onChange = { bar.setNeedsUpdate() }
         tap.onMouseMoved = { bar.cursorMoved($0) }
@@ -68,6 +75,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let status = SystemStatus { bar.update(status: $0) }
         status.start()
         self.status = status
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: .main
+        ) { note in
+            guard (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?
+                .bundleIdentifier == "com.apple.dock" else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { manager.applyShadowAll() }
+        }
+
         observer.start()
         tap.start()
         loader.start()
@@ -94,6 +109,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// A non-modal panel (a modal one would block the event tap).
+    private func notify(_ message: String) {
+        let a = NSAlert()
+        a.messageText = "swwm"
+        a.informativeText = message
+        a.addButton(withTitle: "OK")
+        a.buttons[0].target = a.window
+        a.buttons[0].action = #selector(NSWindow.orderOut(_:))
+        a.layout()
+        a.window.level = .floating
+        a.window.center()
+        a.window.orderFrontRegardless()
+        shadowAlert = a
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         server?.stop()
         manager?.restoreAll()
@@ -102,6 +132,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 // With arguments this binary is the CLI; without, the window manager.
 let cliArgs = CommandLine.arguments.dropFirst().filter { !$0.hasPrefix("-psn_") }
+switch cliArgs.first {
+case "--install-shadows": ShadowInstaller.install()
+case "--uninstall-shadows": ShadowInstaller.uninstall()
+default: break
+}
 if !cliArgs.isEmpty { Client.run(Array(cliArgs)) }
 if Client.isRunning() {
     FileHandle.standardError.write(Data("swwm is already running\n".utf8))

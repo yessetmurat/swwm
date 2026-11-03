@@ -33,6 +33,11 @@ swwm starts managing windows as soon as it is granted. `brew services` starts
 it at login and restarts it if it crashes; `swwm quit` (or `ctrl-alt-q`) stops
 it until the next login or `brew services restart swwm`.
 
+For the bar to sit where the menu bar is, set System Settings → Control Center
+→ "Automatically hide and show the menu bar" to Always (move the cursor to the
+top edge to reach the macOS menu). Keep one native Space per display (remove
+the others in Mission Control); swwm's workspaces replace them.
+
 ## CLI
 
 The same `swwm` binary is the command line: with arguments it talks to the
@@ -90,25 +95,34 @@ Mouse: hold `alt` and drag with the left button to move a window (drop it on
 another window to swap), with the right button to resize. Dragging by the
 title bar or resizing by an edge works too.
 
-## Moving from yabai, skhd and sketchybar
+## Window shadows
 
-1. Stop and remove the old services:
-   ```sh
-   yabai --stop-service && yabai --uninstall-service
-   skhd --stop-service && skhd --uninstall-service
-   brew services stop sketchybar
-   ```
-   then `brew uninstall` them if you no longer need them.
-2. System Settings → Control Center → "Automatically hide and show the menu
-   bar": Always. The bar sits where the menu bar was; move the cursor to the
-   top edge to reach the macOS menu.
-3. Keep one native Space per display (remove the others in Mission Control);
-   swwm's workspaces replace them.
-4. If you ran a development build that was an `.app`, remove its entry in
-   System Settings → General → Login Items.
-5. SIP can be turned back on: swwm does not need the yabai scripting addition.
-   A later optional module for removing window shadows will need it partly
-   disabled.
+Optional. macOS has no public way to remove another app's window shadow, so
+this uses a small payload loaded into Dock (the technique yabai uses). It is
+off by default and swwm works fully without it.
+
+Requirements (the installer checks them): SIP filesystem protections and
+debugging restrictions disabled, and the `-arm64e_preview_abi` boot-arg. Check
+with `csrutil status` and `nvram boot-args`.
+
+```sh
+sudo swwm --install-shadows     # installs a root launchd daemon; re-run after upgrading swwm
+sudo swwm --uninstall-shadows
+```
+
+The daemon loads the payload into Dock at boot and after every Dock restart,
+logging to `/Library/Logs/swwm-shadows.log`. Set the policy in the config:
+
+```toml
+[settings]
+window-shadow = "float"   # only floating windows keep a shadow (default)
+# window-shadow = "off"   # no window has a shadow
+# window-shadow = "on"    # swwm never touches shadows
+```
+
+The Dock payload and its injector are derived from yabai's scripting addition
+(MIT, Copyright (c) 2019 Åsmund Vikane; see `osax/LICENSE.yabai`); the arm64e
+injection path is based on work by Jeremy Legendre.
 
 ## Development
 
@@ -142,8 +156,12 @@ A Developer ID Application certificate must be in the keychain.
 make release VERSION=<x.y.z> SIGN_IDENTITY="<Developer ID Application identity>" NOTARY_PROFILE=<profile>
 ```
 
-This signs `bin/swwm` (hardened runtime, timestamp), notarizes it, writes
-`build/swwm-<x.y.z>.tar.gz` and prints its SHA-256. Upload the tarball to a
+This signs `bin/swwm` and the shadow-module binaries (hardened runtime,
+timestamp), notarizes `bin/swwm`, writes `build/swwm-<x.y.z>.tar.gz` and prints
+its SHA-256. Only `bin/swwm` is notarized: the arm64e shadow binaries are not
+launched through Gatekeeper (loaded into Dock / run by root) and only work with
+SIP partly disabled, so keeping them out of the notary submission avoids
+failing it and leaving swwm without a ticket. Upload the tarball to a
 GitHub release `v<x.y.z>`, then update `url` and `sha256` in the tap's
 `Formula/swwm.rb` (template: `packaging/homebrew/swwm.rb`).
 

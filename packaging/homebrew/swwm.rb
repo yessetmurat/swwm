@@ -13,7 +13,7 @@ class Swwm < Formula
 
   def install
     bin.install "bin/swwm"
-    (share/"swwm").install "share/swwm/fonts"
+    (share/"swwm").install Dir["share/swwm/*"]
   end
 
   service do
@@ -29,6 +29,10 @@ class Swwm < Formula
       Start swwm now and at login:
         brew services start swwm
       Then allow swwm in System Settings > Privacy & Security > Accessibility.
+
+      Optional, removes window shadows (needs SIP partly disabled):
+        sudo swwm --install-shadows
+      Re-run it after upgrading swwm.
     EOS
   end
 

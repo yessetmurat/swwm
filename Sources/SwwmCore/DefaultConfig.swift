@@ -18,6 +18,9 @@ extension Config {
     focus-follows-mouse = true # with autoraise
     mouse-follows-focus = true
     mouse-modifier = "alt"     # + left drag moves, + right drag resizes
+    # Needs the optional shadow module (sudo swwm --install-shadows):
+    # "float" - only floating windows keep a shadow, "off" - none, "on" - untouched.
+    window-shadow = "float"
 
     # Workspaces per display. `match` is the display's model name as macOS
     # shows it, "built-in" for the laptop screen, or "*" for any other display.
