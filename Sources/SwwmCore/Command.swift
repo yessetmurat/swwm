@@ -7,7 +7,6 @@
 
 import Foundation
 
-
 public typealias WindowID = UInt32   // CGWindowID
 public typealias MonitorID = UInt32  // CGDirectDisplayID
 
