@@ -58,7 +58,8 @@ release:
 	# the whole thing and leaving swwm without a ticket.
 	rm -f build/swwm-notarize.zip
 	ditto -c -k --keepParent $(STAGE)/bin build/swwm-notarize.zip
-	xcrun notarytool submit build/swwm-notarize.zip --keychain-profile "$(NOTARY_PROFILE)" --wait
+	xcrun notarytool submit build/swwm-notarize.zip --keychain-profile "$(NOTARY_PROFILE)" \
+		$(if $(NOTARY_KEYCHAIN),--keychain "$(NOTARY_KEYCHAIN)") --wait
 	tar --uid 0 --gid 0 --uname root --gname wheel -czf build/swwm-$(VERSION).tar.gz -C $(STAGE) bin share
 	shasum -a 256 build/swwm-$(VERSION).tar.gz
 

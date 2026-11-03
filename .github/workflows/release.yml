@@ -22,7 +22,7 @@ permissions:
 
 jobs:
   release:
-    runs-on: macos-15
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -31,7 +31,9 @@ jobs:
           CODESIGN_P12: ${{ secrets.CODESIGN_P12 }}
           CODESIGN_P12_PASSWORD: ${{ secrets.CODESIGN_P12_PASSWORD }}
         run: |
-          KEYCHAIN=build.keychain
+          # notarytool takes a keychain by path only, so use a full path throughout.
+          KEYCHAIN="$RUNNER_TEMP/build.keychain-db"
+          echo "KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
           PASSWORD=$(uuidgen)
           security create-keychain -p "$PASSWORD" "$KEYCHAIN"
           security set-keychain-settings -lut 3600 "$KEYCHAIN"
@@ -51,15 +53,15 @@ jobs:
         run: |
           xcrun notarytool store-credentials swwm-ci \
             --apple-id "$NOTARY_APPLE_ID" --team-id "$NOTARY_TEAM_ID" \
-            --password "$NOTARY_PASSWORD" --keychain build.keychain
+            --password "$NOTARY_PASSWORD" --keychain "$KEYCHAIN"
 
       - name: Build, sign, notarize
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          IDENTITY=$(security find-identity -v -p codesigning build.keychain \
+          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN" \
             | grep "Developer ID Application" | head -1 | sed -E 's/.*"(.*)"/\1/')
           test -n "$IDENTITY" || { echo "no Developer ID Application identity in keychain"; exit 1; }
-          make release VERSION="$VERSION" SIGN_IDENTITY="$IDENTITY" NOTARY_PROFILE=swwm-ci
+          make release VERSION="$VERSION" SIGN_IDENTITY="$IDENTITY" NOTARY_PROFILE=swwm-ci NOTARY_KEYCHAIN="$KEYCHAIN"
 
       - name: Create GitHub release
         env:
