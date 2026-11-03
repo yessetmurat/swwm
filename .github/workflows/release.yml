@@ -84,6 +84,7 @@ jobs:
           sed -i '' -E \
             -e "s|url \".*\"|url \"${URL}\"|" \
             -e "s|sha256 \".*\"|sha256 \"${SHA}\"|" \
+            -e "s|^  version \".*\"|  version \"${VERSION}\"|" \
             Formula/swwm.rb
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
