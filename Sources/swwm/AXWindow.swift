@@ -53,12 +53,6 @@ struct AXWindow {
         return info?.first?[kCGWindowLayer as String] as? Int ?? 0
     }
 
-    /// Has a native tab bar (two or more tabs, as in Ghostty or Finder).
-    var hasTabs: Bool {
-        let kids: [AXUIElement] = element.attribute(kAXChildrenAttribute) ?? []
-        return kids.contains { $0.attribute(kAXRoleAttribute) == kAXTabGroupRole as String }
-    }
-
     var isResizable: Bool {
         var settable: DarwinBoolean = false
         return AXUIElementIsAttributeSettable(element, kAXSizeAttribute as CFString, &settable) == .success

@@ -70,8 +70,9 @@ final class Manager {
             return false
         }
         // A new or newly shown native tab takes the tile of the tab it covers,
-        // which drops out of the app's window list.
-        if w.hasTabs, let app = NSRunningApplication(processIdentifier: w.pid) {
+        // which drops out of the app's window list. No tab bar check: when a
+        // tab closes, the next one is reported before the close, already alone.
+        if let app = NSRunningApplication(processIdentifier: w.pid) {
             let listed = Set(AXWindow.windows(of: app).map(\.id))
             let f = w.frame
             func overlap(_ id: WindowID) -> CGFloat {
@@ -93,6 +94,7 @@ final class Manager {
         guard let target else { return false }
         windows[w.id] = w
         titles[w.id] = w.title
+        AppObserver.current?.watch(w)  // windows first seen on a focus change are not watched yet
         world.add(w.id, to: target, floatingFrame: floats ? frame : nil)
         applyShadow(w.id)
         return true
@@ -120,11 +122,14 @@ final class Manager {
         guard let w = windows[id], let app = NSRunningApplication(processIdentifier: w.pid),
               let r = world.layoutFrame(of: id, gap: settings.gap) else { return nil }
         return AXWindow.windows(of: app).first {
-            let f = $0.frame
-            return windows[$0.id] == nil && $0.isStandard && !$0.isMinimized
-                && abs(f.minX - r.minX) <= 1 && abs(f.minY - r.minY) <= 1
-                && abs(f.width - r.width) <= 1 && abs(f.height - r.height) <= 1
+            windows[$0.id] == nil && $0.isStandard && !$0.isMinimized && near($0.frame, r)
         }
+    }
+
+    /// Equal up to the rounding apps do (632.5 comes back as 633).
+    private func near(_ a: CGRect, _ b: CGRect) -> Bool {
+        abs(a.minX - b.minX) <= 1 && abs(a.minY - b.minY) <= 1
+            && abs(a.width - b.width) <= 1 && abs(a.height - b.height) <= 1
     }
 
     /// Sets a window's shadow to what `window-shadow` wants, if anything.
@@ -468,13 +473,19 @@ final class Manager {
     func windowCreated(_ w: AXWindow) {
         // New windows open on the display under the cursor.
         guard track(w, near: Displays.cursor), let ws = world.workspace(containing: w.id), let m = world.monitor(of: ws.name) else { return }
+        // Placed before the rest: it is on screen at the app's spot until then.
+        if world.isVisible(w.id), let r = world.layoutFrame(of: w.id, gap: settings.gap) { w.setFrame(r) }
         layout(m)
         // A fresh window may drop the size and keep only the position: Ghostty
-        // holds a new window at its parent's size for a moment. Set it once more.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-            guard let self, self.world.isVisible(w.id),
-                  let r = self.world.layoutFrame(of: w.id, gap: self.settings.gap) else { return }
-            self.windows[w.id]?.setFrame(r)
+        // holds a new window at its parent's size for a moment. Check soon and
+        // a few times more, so the fix shows up within a frame or two.
+        for delay in [0.03, 0.08, 0.3] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self, self.world.isVisible(w.id), let win = self.windows[w.id],
+                      let r = self.world.layoutFrame(of: w.id, gap: self.settings.gap),
+                      !self.near(win.frame, r) else { return }
+                win.setFrame(r)
+            }
         }
     }
 
