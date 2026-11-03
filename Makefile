@@ -14,6 +14,8 @@ app:
 	mkdir -p $(APP)/Contents/MacOS
 	cp .build/release/swwm $(APP)/Contents/MacOS/swwm
 	cp Resources/Info.plist $(APP)/Contents/Info.plist
+	mkdir -p $(APP)/Contents/Resources/Fonts
+	cp Resources/Fonts/* $(APP)/Contents/Resources/Fonts/
 	codesign --force --sign "$(SIGN_IDENTITY)" $(APP)
 
 run: app

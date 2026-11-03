@@ -63,3 +63,20 @@ private func err(_ s: String) -> String? {
     #expect(err("[[rule]]\napp = \"(\"")?.contains("(") == true)
     #expect(err("[[rule]]\napp = \"x\"\nworkspace = \"9\"")?.contains("unknown workspace '9'") == true)
 }
+
+@Test func barDefaults() {
+    #expect(Config.default.bar == BarStyle())
+}
+
+@Test func barParses() throws {
+    let c = try Config.parse("[bar]\nbackground = \"0x80112233\"\nlabel-font = \"Menlo:Bold:12.5\"")
+    #expect(c.bar.background == 0x8011_2233)
+    #expect(c.bar.labelFont == FontSpec(family: "Menlo", style: "Bold", size: 12.5))
+    #expect(c.bar.foreground == 0xFFFF_FFFF)
+}
+
+@Test func barErrors() {
+    #expect(err("[bar]\nbackground = \"red\"")?.contains("background") == true)
+    #expect(err("[bar]\nlabel-font = \"Menlo:12\"")?.contains("label-font") == true)
+    #expect(err("[bar]\nsize = 3")?.contains("size") == true)
+}

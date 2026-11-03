@@ -87,6 +87,14 @@ extension Config {
     "ctrl-alt-r" = "reload"
     "ctrl-alt-q" = "quit"
 
+    # Bar on every display. Colors are 0xAARRGGBB; fonts "Family:Style:Size".
+    [bar]
+    background = "0x40000000"
+    item-background = "0x33000000"
+    foreground = "0xffffffff"
+    workspace-font = "IBM Plex Mono:SemiBold:15"
+    label-font = "IBM Plex Sans:SemiBold:14"
+
     # Rules for new windows: `app` and `title` are regular expressions.
     [[rule]]
     app = "^Ghostty$"

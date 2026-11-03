@@ -27,6 +27,7 @@ final class EventTap {
     private var drag: Drag?
     private var press: (window: WindowID, frame: CGRect)?  // plain left press on a managed window
     private var lastHover = Date.distantPast
+    var onMouseMoved: (CGPoint) -> Void = { _ in }
     private var pendingDragPoint: CGPoint?  // coalesced: only the latest drag position is applied
 
     init(manager: Manager) {
@@ -67,7 +68,9 @@ final class EventTap {
             DispatchQueue.main.async { [manager] in manager.run(command) }
             return nil
         case .mouseMoved:
-            hover(event.location)
+            let p = event.location
+            DispatchQueue.main.async { [self] in onMouseMoved(p) }
+            hover(p)
             return event
         case .leftMouseDown, .rightMouseDown:
             guard modifiers(event.flags) == settings.mouseModifier else {

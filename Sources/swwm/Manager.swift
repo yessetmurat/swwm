@@ -18,6 +18,7 @@ final class Manager {
     let world: World
     var onReload: () -> Void = {}
     var onQuit: () -> Void = {}
+    var onChange: () -> Void = {}                         // something the bar shows may have changed
 
     private(set) var windows: [WindowID: AXWindow] = [:]
     private var hidden: [WindowID: MonitorID] = [:]      // window -> display it is hidden on
@@ -75,6 +76,7 @@ final class Manager {
 
     /// Removes a window; when it had focus, focus goes to another window of the same display.
     func untrack(_ id: WindowID, remember: Bool) {
+        defer { onChange() }
         log.debug("untrack \(id, privacy: .public) focused=\(self.focused.map(String.init) ?? "nil", privacy: .public)")
         guard let w = windows[id] else { return }
         if remember, let ws = world.workspace(containing: id), let wm = world.monitor(of: ws.name) {
@@ -108,6 +110,7 @@ final class Manager {
     }
 
     func layout(_ m: MonitorID) {
+        defer { onChange() }
         guard let info = world.monitorInfo(m), let activeName = world.activeWorkspace(on: m),
               let ws = world.workspace(named: activeName) else { return }
         let others = world.monitors.filter { $0.id != m }
@@ -178,6 +181,7 @@ final class Manager {
     }
 
     func focus(_ id: WindowID, warp: Bool = true) {
+        defer { onChange() }
         guard let w = windows[id] else { return }
         park.clear()
         w.focus()
@@ -192,6 +196,7 @@ final class Manager {
 
     /// Focuses the most recent window of display `m`, or parks focus on it.
     func focus(monitor m: MonitorID) {
+        defer { onChange() }
         if let id = world.focusCandidate(on: m) {
             focus(id)
         } else if let info = world.monitorInfo(m) {
@@ -219,6 +224,7 @@ final class Manager {
 
     /// Records focus changes made outside swwm (clicks, app switches).
     func windowFocused(_ id: WindowID) {
+        defer { onChange() }
         log.debug("windowFocused \(id, privacy: .public) managed=\(self.windows[id] != nil, privacy: .public)")
         guard windows[id] != nil, focused != id else { return }
         let now = Date()
@@ -410,9 +416,15 @@ final class Manager {
     func window(at p: CGPoint) -> WindowID? {
         let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
             as? [[String: Any]] ?? []
-        for info in list where (info[kCGWindowLayer as String] as? Int) == 0 {
+        let me = Int(getpid())
+        for info in list {
             guard let dict = info[kCGWindowBounds as String] as? NSDictionary,
                   let r = CGRect(dictionaryRepresentation: dict), r.contains(p) else { continue }
+            // swwm's own bar is on top here: nothing under it takes focus.
+            if (info[kCGWindowOwnerPID as String] as? Int) == me, (info[kCGWindowAlpha as String] as? Double ?? 1) > 0 {
+                return nil
+            }
+            guard (info[kCGWindowLayer as String] as? Int) == 0 else { continue }
             // Hidden windows keep a sliver on screen; they must never take focus.
             let id = (info[kCGWindowNumber as String] as? Int).map(WindowID.init)
             return id.flatMap { windows[$0] != nil && hidden[$0] == nil ? $0 : nil }
@@ -421,6 +433,8 @@ final class Manager {
     }
 
     func setFrame(_ id: WindowID, _ r: CGRect) { windows[id]?.setFrame(r) }
+
+    func appName(of id: WindowID) -> String? { windows[id]?.appName }
 
     func setPosition(_ id: WindowID, _ p: CGPoint) { windows[id]?.setPosition(p) }
 

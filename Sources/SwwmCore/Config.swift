@@ -19,6 +19,40 @@ public struct Settings: Equatable, Sendable {
     public init() {}
 }
 
+/// A font as "Family:Style:Size", e.g. "IBM Plex Mono:SemiBold:15".
+public struct FontSpec: Equatable, Sendable {
+
+    public var family: String
+    public var style: String
+    public var size: Double
+
+    public init(family: String, style: String, size: Double) {
+        self.family = family
+        self.style = style
+        self.size = size
+    }
+
+    public static func parse(_ s: String) throws(ConfigError) -> FontSpec {
+        let parts = s.split(separator: ":").map { $0.trimmingCharacters(in: .whitespaces) }
+        guard parts.count == 3, !parts[0].isEmpty, !parts[1].isEmpty, let size = Double(parts[2]), size > 0 else {
+            throw ConfigError("font '\(s)' must be \"Family:Style:Size\"")
+        }
+        return FontSpec(family: parts[0], style: parts[1], size: size)
+    }
+}
+
+/// Bar look; the defaults copy the sketchybar setup swwm replaces.
+public struct BarStyle: Equatable, Sendable {
+
+    public var background: UInt32 = 0x4000_0000  // ARGB
+    public var itemBackground: UInt32 = 0x3300_0000
+    public var foreground: UInt32 = 0xFFFF_FFFF
+    public var workspaceFont = FontSpec(family: "IBM Plex Mono", style: "SemiBold", size: 15)
+    public var labelFont = FontSpec(family: "IBM Plex Sans", style: "SemiBold", size: 14)
+
+    public init() {}
+}
+
 public struct MonitorRule: Equatable, Sendable {
 
     public var match: String
@@ -55,6 +89,7 @@ public struct Config: Sendable {
     public var monitors: [MonitorRule] = []
     public var bindings: [KeyCombo: Command] = [:]
     public var rules: [AppRule] = []
+    public var bar = BarStyle()
 
     public var allWorkspaces: [String] { monitors.flatMap(\.workspaces) }
 
@@ -71,7 +106,7 @@ public struct Config: Sendable {
         }
 
         var c = Config()
-        try checkKeys(root, ["settings", "monitor", "bindings", "rule"], in: "config")
+        try checkKeys(root, ["settings", "monitor", "bindings", "rule", "bar"], in: "config")
 
         if let t = try table(root, "settings") {
             try checkKeys(t, ["gap", "padding", "bar-height", "focus-follows-mouse", "mouse-follows-focus", "mouse-modifier"], in: "settings")
@@ -144,10 +179,32 @@ public struct Config: Sendable {
                 app: app, title: title, workspace: workspace, float: try bool(t, "float"),
                 appRegex: try regex(app), titleRegex: try title.map { s throws(ConfigError) in try regex(s) }))
         }
+        if let t = try table(root, "bar") {
+            try checkKeys(t, ["background", "item-background", "foreground", "workspace-font", "label-font"], in: "bar")
+            if let v = try color(t, "background") { c.bar.background = v }
+            if let v = try color(t, "item-background") { c.bar.itemBackground = v }
+            if let v = try color(t, "foreground") { c.bar.foreground = v }
+            if let v = try font(t, "workspace-font") { c.bar.workspaceFont = v }
+            if let v = try font(t, "label-font") { c.bar.labelFont = v }
+        }
         return c
     }
 
     // MARK: - helpers
+
+    private static func color(_ t: TOMLTable, _ key: String) throws(ConfigError) -> UInt32? {
+        guard let s = try string(t, key) else { return nil }
+        let hex = s.lowercased()
+        guard hex.hasPrefix("0x"), hex.count == 10, let v = UInt32(hex.dropFirst(2), radix: 16) else {
+            throw ConfigError("bar.\(key): '\(s)' must be 0xAARRGGBB")
+        }
+        return v
+    }
+
+    private static func font(_ t: TOMLTable, _ key: String) throws(ConfigError) -> FontSpec? {
+        guard let s = try string(t, key) else { return nil }
+        do { return try FontSpec.parse(s) } catch { throw ConfigError("bar.\(key): \(error.message)") }
+    }
 
     private static func checkKeys(_ t: TOMLTable, _ allowed: Set<String>, in context: String) throws(ConfigError) {
         if let bad = t.keys.first(where: { !allowed.contains($0) }) {

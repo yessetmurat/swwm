@@ -14,6 +14,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var manager: Manager?
     private var observer: AppObserver?
     private var tap: EventTap?
+    private var bar: BarController?
+    private var status: SystemStatus?
     private var loader: ConfigLoader?
     private var signals: [DispatchSourceSignal] = []
     private var displayChange: DispatchWorkItem?
@@ -35,32 +37,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func start() {
         // A hung app must not stall swwm (and the event tap) for the 6 s default.
         AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), 0.25)
+        Fonts.registerBundled()
         var apply: (Config) -> Void = { _ in }
         let loader = ConfigLoader { apply($0) }
         let config = loader.load()
         let manager = Manager(world: World(config: config))
         let tap = EventTap(manager: manager)
         let observer = AppObserver(manager: manager)
+        let bar = BarController(manager: manager)
         apply = { config in
             manager.world.apply(config: config)
             tap.update(config: config)
             manager.layoutAll()
+            bar.rebuild()
         }
+        manager.onChange = { bar.setNeedsUpdate() }
+        tap.onMouseMoved = { bar.cursorMoved($0) }
         manager.onReload = { loader.reload() }
         manager.onQuit = { NSApp.terminate(nil) }
 
         tap.update(config: config)
         manager.start()
+        bar.rebuild()
+        let status = SystemStatus { bar.update(status: $0) }
+        status.start()
+        self.status = status
         observer.start()
         tap.start()
         loader.start()
-        (self.manager, self.tap, self.observer, self.loader) = (manager, tap, observer, loader)
+        (self.manager, self.tap, self.observer, self.loader, self.bar) = (manager, tap, observer, loader, bar)
 
         NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
         ) { [weak self] _ in
             self?.displayChange?.cancel()
-            let item = DispatchWorkItem { manager.displaysChanged() }
+            let item = DispatchWorkItem {
+                manager.displaysChanged()
+                bar.rebuild()
+            }
             self?.displayChange = item
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: item)
         }
