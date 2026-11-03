@@ -5,9 +5,8 @@
 //  Created by Yesset Murat on 03.11.2026.
 //
 
-/// `window-shadow`: `float` — only floating windows keep a shadow (yabai's
-/// `window_shadow float`), `off` — no window has one, `on` — swwm never
-/// touches shadows.
+/// `window-shadow`: `float` — only floating windows keep a shadow, `off` —
+/// no window has one, `on` — swwm never touches shadows.
 public enum ShadowMode: String, Sendable {
 
     case float, off, on

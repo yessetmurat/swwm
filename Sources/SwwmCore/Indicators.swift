@@ -45,7 +45,7 @@ public func batteryItem(percent: Int?, onAC: Bool) -> IndicatorItem? {
 /// `volume` is 0...1; nil (no volume control on the device) hides the item.
 public func volumeItem(volume: Float?, muted: Bool) -> IndicatorItem? {
     guard let v = volume else { return nil }
-    let p = muted ? 0 : Int((v * 100).rounded())  // muted reads as 0%, as sketchybar showed it
+    let p = muted ? 0 : Int((v * 100).rounded())  // muted reads as 0%
     let symbol: String
     switch p {
     case _ where muted: symbol = "speaker.slash.fill"

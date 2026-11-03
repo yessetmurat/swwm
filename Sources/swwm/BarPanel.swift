@@ -37,8 +37,8 @@ final class BarPanel: NSPanel {
         hidesOnDeactivate = false
         becomesKeyOnlyIfNeeded = true
 
-        // A plain blur of what is behind plus the tint, as sketchybar draws it
-        // (blur_radius=30); NSVisualEffectView materials add their own darkening.
+        // A plain blur of what is behind plus the tint (radius 30);
+        // NSVisualEffectView materials add their own darkening.
         let blur = NSView()
         contentView = blur
 
@@ -62,7 +62,7 @@ final class BarPanel: NSPanel {
         Self.setBlurRadius(30, of: windowNumber)
     }
 
-    /// SkyLight's window background blur, the call sketchybar uses; private
+    /// SkyLight's window background blur; private
     /// but needs no SIP change. Missing symbol: no blur, tint only.
     private static func setBlurRadius(_ radius: Int32, of window: Int) {
         typealias Main = @convention(c) () -> Int32
@@ -150,7 +150,7 @@ final class BarPanel: NSPanel {
         let app = BarItem(text: state.app, symbol: nil, font: labelFont, color: fg, background: bg, truncates: true)
         leftItems.append(app)
 
-        // On screen, left to right: language, volume, battery, clock (sketchybar's order, clock at the edge).
+        // On screen, left to right: language, volume, battery, clock (clock at the edge).
         var rightItems: [NSView] = []
         if let lang = status.language {
             rightItems.append(BarItem(text: lang, symbol: nil, font: labelFont, color: fg, background: bg))
@@ -166,7 +166,7 @@ final class BarPanel: NSPanel {
     private static func stack() -> NSStackView {
         let s = NSStackView()
         s.orientation = .horizontal
-        s.spacing = 4  // sketchybar: padding_left=2 + padding_right=2
+        s.spacing = 4
         s.alignment = .centerY
         return s
     }
@@ -178,7 +178,7 @@ final class BarPanel: NSPanel {
 }
 
 /// One rounded item: optional SF Symbol, then text; 10pt padding outside,
-/// 8pt between icon and text (sketchybar icon/label paddings 10+4 / 4+10).
+/// 8pt between icon and text.
 private final class BarItem: NSView {
 
     var onClick: (() -> Void)?

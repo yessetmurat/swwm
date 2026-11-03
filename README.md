@@ -1,8 +1,7 @@
 # swwm
 
-A tiling window manager and bar for macOS, written in Swift. It replaces a
-yabai + skhd + sketchybar setup with one app and one config file, and needs no
-scripts.
+A tiling window manager and bar for macOS, written in Swift. One app and one
+config file, no scripts.
 
 - Dwindle tiling (as in Hyprland): a new window splits the focused one; the
   split follows the shape of the area.
@@ -10,7 +9,7 @@ scripts.
   moved off-screen, so SIP can stay enabled.
 - Focus never jumps to another display when a window closes, minimizes or
   its app hides.
-- Built-in hotkeys and mouse actions (no skhd).
+- Built-in hotkeys and mouse actions.
 - Built-in bar on every display: workspaces, focused app, clock, battery,
   volume, keyboard language. Fonts ship inside the app.
 - One TOML config, applied on save.
@@ -99,7 +98,7 @@ title bar or resizing by an edge works too.
 ## Window shadows
 
 Optional. macOS has no public way to remove another app's window shadow, so
-this uses a small payload loaded into Dock (the technique yabai uses). It is
+this uses a small payload loaded into Dock. It is
 off by default and swwm works fully without it.
 
 Requirements (the installer checks them): SIP filesystem protections and

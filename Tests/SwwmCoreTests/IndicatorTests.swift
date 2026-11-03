@@ -33,7 +33,7 @@ import Testing
     #expect(volumeItem(volume: 1, muted: false)?.symbol == "speaker.wave.3.fill")
     #expect(volumeItem(volume: 0.05, muted: false)?.symbol == "speaker.wave.1.fill")
     #expect(volumeItem(volume: 0, muted: false)?.symbol == "speaker.slash.fill")
-    #expect(volumeItem(volume: 0.7, muted: true) == IndicatorItem(symbol: "speaker.slash.fill", text: "0%"))  // as sketchybar showed it
+    #expect(volumeItem(volume: 0.7, muted: true) == IndicatorItem(symbol: "speaker.slash.fill", text: "0%"))
 }
 
 @Test func volumeHiddenWithoutControl() {

@@ -88,7 +88,7 @@ struct AXWindow {
 
     /// With AXEnhancedUserInterface on (set by assistive apps), browsers
     /// animate frame changes and drop the ones that arrive mid-animation.
-    /// Turned off for the change and restored, as yabai and AeroSpace do.
+    /// Turned off for the change and restored.
     private func withoutEnhancedUI(_ body: () -> Void) {
         let app = AXUIElementCreateApplication(pid)
         let key = "AXEnhancedUserInterface" as CFString

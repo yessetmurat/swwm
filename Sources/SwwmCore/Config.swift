@@ -42,7 +42,7 @@ public struct FontSpec: Equatable, Sendable {
     }
 }
 
-/// Bar look; the defaults copy the sketchybar setup swwm replaces.
+/// Bar look.
 public struct BarStyle: Equatable, Sendable {
 
     public var background: UInt32 = 0x4000_0000  // ARGB
