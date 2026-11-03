@@ -46,6 +46,13 @@ struct AXWindow {
             && element.attribute(kAXSubroleAttribute) == kAXStandardWindowSubrole as String
     }
 
+    /// Window server level: 0 for normal windows. System prompts (SecurityAgent
+    /// sits at 1000), floating panels and overlays are above and never tiled.
+    var level: Int {
+        let info = CGWindowListCopyWindowInfo([.optionIncludingWindow], id) as? [[String: Any]]
+        return info?.first?[kCGWindowLayer as String] as? Int ?? 0
+    }
+
     var isResizable: Bool {
         var settable: DarwinBoolean = false
         return AXUIElementIsAttributeSettable(element, kAXSizeAttribute as CFString, &settable) == .success

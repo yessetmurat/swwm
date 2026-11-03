@@ -17,7 +17,7 @@ public struct FocusHistory {
     private var lastRemoval = Date.distantPast
 
     /// How long a window that lost focus still counts as focused.
-    static let grace: TimeInterval = 0.3
+    public static let grace: TimeInterval = 0.3
 
     public init() {}
 
@@ -35,9 +35,11 @@ public struct FocusHistory {
     public mutating func removed(at now: Date) { lastRemoval = now }
 
     /// Focus moving to a window on a hidden workspace shows that workspace,
-    /// except right after a window went away: then it is macOS picking
-    /// another app, not the user.
-    public func autoShowAllowed(now: Date) -> Bool {
-        now.timeIntervalSince(lastRemoval) > Self.grace
+    /// except around a window going away: then it is macOS picking another
+    /// app, not the user. On cmd-q the fallback app is activated before the
+    /// quit app is reported gone, so a removal after the focus counts too:
+    /// callers ask `grace` after the focus.
+    public func autoShowAllowed(focusedAt: Date) -> Bool {
+        lastRemoval < focusedAt.addingTimeInterval(-Self.grace)
     }
 }

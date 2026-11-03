@@ -163,7 +163,9 @@ final class EventTap {
         guard now.timeIntervalSince(lastHover) > 0.03, now.timeIntervalSince(manager.lastWarp) > 0.2 else { return }
         lastHover = now
         DispatchQueue.main.async { [manager] in
-            if let id = manager.window(at: p), id != manager.focused { manager.focus(id, warp: false) }
+            if let id = manager.window(at: p), id != manager.focused, !manager.focusInUnmanagedWindow {
+                manager.focus(id, warp: false)
+            }
         }
     }
 }

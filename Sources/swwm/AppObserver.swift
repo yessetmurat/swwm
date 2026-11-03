@@ -25,7 +25,7 @@ final class AppObserver {
 
     func start() {
         AppObserver.current = self
-        for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular {
+        for app in NSWorkspace.shared.runningApplications where app.isManageable {
             observe(app)
         }
         let nc = NSWorkspace.shared.notificationCenter
@@ -37,7 +37,7 @@ final class AppObserver {
             })
         }
         on(NSWorkspace.didLaunchApplicationNotification) { [weak self] app in
-            guard app.activationPolicy == .regular else { return }
+            guard app.isManageable else { return }
             // A fresh app may not answer AX yet.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 self?.observe(app)
@@ -126,4 +126,20 @@ final class AppObserver {
 private func axCallback(_ observer: AXObserver, _ element: AXUIElement, _ notification: CFString,
                         _ refcon: UnsafeMutableRawPointer?) {
     AppObserver.current?.handle(element, notification as String, refcon)
+}
+
+extension NSRunningApplication {
+
+    /// Apps whose windows swwm manages: regular apps, and menu-bar (accessory)
+    /// apps that open windows, such as 1Password. Not macOS's own accessory
+    /// agents (the Touch ID and password prompts of coreautha and
+    /// SecurityAgent, Notification Center), not background agents, not swwm.
+    var isManageable: Bool {
+        guard processIdentifier != getpid() else { return false }
+        switch activationPolicy {
+        case .regular: return true
+        case .accessory: return bundleURL.map { !$0.path.hasPrefix("/System/") } ?? false
+        default: return false
+        }
+    }
 }

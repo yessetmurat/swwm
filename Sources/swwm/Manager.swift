@@ -44,7 +44,7 @@ final class Manager {
 
     func start() {
         world.updateMonitors(Displays.current())
-        for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular {
+        for app in NSWorkspace.shared.runningApplications where app.isManageable {
             adopt(app)
         }
         layoutAll()
@@ -64,8 +64,9 @@ final class Manager {
     /// fullscreen windows are not managed.
     @discardableResult
     func track(_ w: AXWindow, near point: CGPoint) -> Bool {
-        guard windows[w.id] == nil, w.isStandard, !w.isFullScreen, !w.isMinimized else {
-            log.debug("skip \(w.id, privacy: .public) \(w.appName, privacy: .public) role=\(w.element.attribute(kAXRoleAttribute) as String? ?? "-", privacy: .public) sub=\(w.element.attribute(kAXSubroleAttribute) as String? ?? "-", privacy: .public) full=\(w.isFullScreen, privacy: .public) min=\(w.isMinimized, privacy: .public)")
+        guard windows[w.id] == nil, NSRunningApplication(processIdentifier: w.pid)?.isManageable == true,
+              w.isStandard, w.level == 0, !w.isFullScreen, !w.isMinimized else {
+            log.debug("skip \(w.id, privacy: .public) \(w.appName, privacy: .public) role=\(w.element.attribute(kAXRoleAttribute) as String? ?? "-", privacy: .public) sub=\(w.element.attribute(kAXSubroleAttribute) as String? ?? "-", privacy: .public) level=\(w.level, privacy: .public) full=\(w.isFullScreen, privacy: .public) min=\(w.isMinimized, privacy: .public)")
             return false
         }
         let rule = world.config.rules.first { $0.matches(app: w.appName, title: w.title) }
@@ -259,13 +260,19 @@ final class Manager {
         park.clear()
         world.noteFocused(id)
         // A window on a hidden workspace got focus (Dock click, app switch): show its
-        // workspace. Not right after a close: that is macOS picking a fallback app,
-        // and the pending refocus overrides it.
-        if history.autoShowAllowed(now: now), pendingFocus.isEmpty,
-           let ws = world.workspace(containing: id), let m = world.monitor(of: ws.name),
-           world.activeWorkspace(on: m) != ws.name {
-            world.show(ws.name)
-            layout(m)
+        // workspace, a moment later. Not around a close: that is macOS picking a
+        // fallback app (on cmd-q before the quit is even reported), and the
+        // pending refocus overrides it.
+        guard let ws = world.workspace(containing: id), let m = world.monitor(of: ws.name),
+              world.activeWorkspace(on: m) != ws.name else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + FocusHistory.grace) { [weak self] in
+            guard let self, self.focused == id, self.pendingFocus.isEmpty,
+                  self.history.autoShowAllowed(focusedAt: now),
+                  let ws = self.world.workspace(containing: id), let m = self.world.monitor(of: ws.name),
+                  self.world.activeWorkspace(on: m) != ws.name else { return }
+            self.world.show(ws.name)
+            self.layout(m)
+            self.onChange()
         }
     }
 
@@ -458,6 +465,17 @@ final class Manager {
             return id.flatMap { windows[$0] != nil && hidden[$0] == nil ? $0 : nil }
         }
         return nil
+    }
+
+    /// True while the user is in a window swwm does not manage (a system prompt
+    /// such as SecurityAgent's, a sheet, a launcher panel): focus-follows-mouse
+    /// must not pull focus away from it.
+    var focusInUnmanagedWindow: Bool {
+        guard let app = NSWorkspace.shared.frontmostApplication, app.processIdentifier != getpid() else { return false }
+        let el = AXUIElementCreateApplication(app.processIdentifier)
+        guard let win: AXUIElement = el.attribute(kAXFocusedWindowAttribute) else { return false }
+        var id: CGWindowID = 0
+        return _AXUIElementGetWindow(win, &id) == .success && windows[id] == nil
     }
 
     func setFrame(_ id: WindowID, _ r: CGRect) { windows[id]?.setFrame(r) }
