@@ -495,9 +495,14 @@ final class Manager {
               world.activeWorkspace(on: m) != ws.name else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + FocusHistory.grace) { [weak self] in
             guard let self, self.focused == id, self.pendingFocus.isEmpty,
-                  self.history.autoShowAllowed(focusedAt: now),
                   let ws = self.world.workspace(containing: id), let m = self.world.monitor(of: ws.name),
                   self.world.activeWorkspace(on: m) != ws.name else { return }
+            guard self.history.autoShowAllowed(focusedAt: now) else {
+                // macOS, not the user, put focus on a hidden window: back to
+                // what the user sees under the mouse.
+                self.focus(monitor: self.world.monitor(at: Displays.cursor) ?? m)
+                return
+            }
             self.world.show(ws.name)
             self.layout(m)
             self.onChange()
@@ -807,6 +812,9 @@ final class Manager {
     func appName(of id: WindowID) -> String? { windows[id]?.appName }
 
     func pid(of id: WindowID) -> pid_t? { windows[id]?.pid }
+
+    /// A click or key press: focus that follows it is the user's doing.
+    func noteInput() { history.input(at: Date()) }
 
     /// From what swwm already knows: no AX round-trips, so a hung app cannot
     /// stall a query (and the event tap on the main thread).

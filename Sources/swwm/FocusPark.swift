@@ -30,6 +30,15 @@ final class FocusPark {
 
     func park(on m: MonitorInfo) {
         monitor = m.id
+        // An empty workspace is the desktop, Finder's, as the bar shows it: so
+        // the menu bar is Finder's too. Only while Finder has no windows:
+        // activating it would bring one forward, maybe on another display.
+        if let finder = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.finder").first,
+           !AXWindow.windows(of: finder).contains(where: \.isStandard) {
+            panel.orderOut(nil)
+            finder.activate()
+            return
+        }
         let r = Displays.appKitRect(m.frame)
         panel.setFrameOrigin(NSPoint(x: r.midX, y: r.midY))
         // NSApp.activate() is cooperative and leaves the other app frontmost;

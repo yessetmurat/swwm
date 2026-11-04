@@ -60,6 +60,7 @@ final class EventTap {
             if let port { CGEvent.tapEnable(tap: port, enable: true) }
             return event
         case .keyDown:
+            manager.noteInput()
             let combo = KeyCombo(keyCode: UInt16(event.getIntegerValueField(.keyboardEventKeycode)),
                                  modifiers: modifiers(event.flags))
             guard let command = bindings[combo] else {
@@ -76,6 +77,7 @@ final class EventTap {
             hover(p)
             return event
         case .leftMouseDown, .rightMouseDown:
+            manager.noteInput()
             guard modifiers(event.flags) == settings.mouseModifier else {
                 // A plain press may start a title-bar move or an edge resize.
                 let p = event.location

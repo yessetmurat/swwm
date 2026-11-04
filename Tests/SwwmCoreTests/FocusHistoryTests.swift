@@ -30,15 +30,28 @@ private let t0 = Date(timeIntervalSinceReferenceDate: 1000)
 
 @Test func autoShowPausedRightAfterRemoval() {
     var h = FocusHistory()
+    h.input(at: t0.addingTimeInterval(-0.1))
     #expect(h.autoShowAllowed(focusedAt: t0))
     h.removed(at: t0)
     #expect(!h.autoShowAllowed(focusedAt: t0.addingTimeInterval(0.1)))
+    h.input(at: t0.addingTimeInterval(0.9))
     #expect(h.autoShowAllowed(focusedAt: t0.addingTimeInterval(1)))
 }
 
 /// On cmd-q macOS activates the next app before it reports the quit one gone.
 @Test func autoShowCancelledByRemovalRightAfterFocus() {
     var h = FocusHistory()
+    h.input(at: t0.addingTimeInterval(-0.1))
     h.removed(at: t0.addingTimeInterval(0.03))
     #expect(!h.autoShowAllowed(focusedAt: t0))
+}
+
+/// Revealing the hidden menu bar over an empty workspace makes macOS
+/// activate the last regular app: no click or key went before it.
+@Test func autoShowNeedsInputJustBefore() {
+    var h = FocusHistory()
+    #expect(!h.autoShowAllowed(focusedAt: t0))
+    h.input(at: t0.addingTimeInterval(-0.3))  // Dock click, cmd-tab
+    #expect(h.autoShowAllowed(focusedAt: t0))
+    #expect(!h.autoShowAllowed(focusedAt: t0.addingTimeInterval(2)))
 }
