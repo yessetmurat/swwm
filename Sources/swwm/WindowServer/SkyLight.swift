@@ -16,7 +16,9 @@ enum SkyLight {
     private static let handle = dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_LAZY)
 
     static func symbol<T>(_ name: String, as type: T.Type) -> T? {
-        guard let handle, let p = dlsym(handle, name) else { return nil }
+        guard let handle, let p = dlsym(handle, name) else {
+            return nil
+        }
         return unsafeBitCast(p, to: type)
     }
 

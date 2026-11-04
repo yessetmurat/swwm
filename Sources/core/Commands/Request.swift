@@ -23,8 +23,14 @@ public enum Request: Equatable, Sendable {
 
     public static func parse(line: String) throws(CommandError) -> Request {
         let parts = line.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
-        guard let first = parts.first else { throw CommandError("no command") }
-        guard first == "query" else { return .command(try Command.parse(line)) }
+        guard let first = parts.first else {
+            throw CommandError("no command")
+        }
+
+        guard first == "query" else {
+            return .command(try Command.parse(line))
+        }
+
         guard parts.count == 2, let kind = QueryKind(rawValue: parts[1]) else {
             throw CommandError("usage: query \(QueryKind.allCases.map(\.rawValue).joined(separator: "|"))")
         }
@@ -76,8 +82,12 @@ public struct Reply: Equatable, Sendable {
     public var wire: String { (ok ? "ok" : "error") + "\n" + body }
 
     public static func parse(wire: String) -> Reply {
-        guard let nl = wire.firstIndex(of: "\n") else { return .error("bad reply") }
+        guard let nl = wire.firstIndex(of: "\n") else {
+            return .error("bad reply")
+        }
+
         let body = String(wire[wire.index(after: nl)...])
+
         switch wire[..<nl] {
         case "ok": return .ok(body)
         case "error": return .error(body)

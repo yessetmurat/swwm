@@ -26,7 +26,9 @@ public final class FocusTicket: Sendable {
     /// one step only after a long stall, and focus may have moved on by then.
     public func run(_ ticket: Int, _ steps: [() -> Void]) {
         for step in steps {
-            guard current == ticket else { return }
+            guard current == ticket else {
+                return
+            }
             step()
         }
     }

@@ -64,6 +64,7 @@ final class DockClient {
     func whenReachable(timeout: TimeInterval = 30, _ done: @escaping () -> Void) {
         queue.async { [path] in
             let end = Date().addingTimeInterval(timeout)
+
             while Date() < end {
                 if Self.send(shadowMessage(window: 0, shadow: true), to: path) != .unreachable {
                     DispatchQueue.main.async(execute: done)
@@ -76,19 +77,41 @@ final class DockClient {
 
     private static func send(_ bytes: [UInt8], to path: String) -> Reply {
         let fd = connect(to: path)
-        guard fd >= 0 else { return .unreachable }
+        guard fd >= 0 else {
+            return .unreachable
+        }
         defer { close(fd) }
-        let sent = bytes.withUnsafeBytes { Darwin.send(fd, $0.baseAddress, $0.count, 0) }
-        guard sent == bytes.count else { return .unreachable }
+
+        let sent = bytes.withUnsafeBytes { Darwin.send(
+            fd,
+            $0.baseAddress,
+            $0.count,
+            0
+        ) }
+        guard sent == bytes.count else {
+            return .unreachable
+        }
+
         var reply: UInt8 = 0
-        guard recv(fd, &reply, 1, 0) == 1 else { return .unreachable }
+        guard recv(
+            fd,
+            &reply,
+            1,
+            0
+        ) == 1 else {
+            return .unreachable
+        }
+
         return reply == 1 ? .done : .rejected
     }
 
     /// A connected socket, or -1.
     private static func connect(to path: String) -> Int32 {
         let fd = Socket.make()
-        guard fd >= 0 else { return -1 }
+        guard fd >= 0 else {
+            return -1
+        }
+
         Socket.setTimeout(fd, seconds: 0.2)
         var addr = Socket.address(path: path)
         let connected = withUnsafePointer(to: &addr) {

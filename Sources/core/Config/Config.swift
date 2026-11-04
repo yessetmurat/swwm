@@ -63,28 +63,42 @@ public struct Config: Sendable {
         var wildcard = false
         for t in try tables(root, "monitor") {
             try checkKeys(t, ["match", "workspaces"], in: "monitor")
-            guard let match = try string(t, "match") else { throw ConfigError("monitor: missing 'match'") }
-            guard let list = t["workspaces"]?.array else { throw ConfigError("monitor '\(match)': missing 'workspaces'") }
+            guard let match = try string(t, "match") else {
+                throw ConfigError("monitor: missing 'match'")
+            }
+            guard let list = t["workspaces"]?.array else {
+                throw ConfigError("monitor '\(match)': missing 'workspaces'")
+            }
             var names: [String] = []
             for v in list {
-                guard let n = v.string, !n.isEmpty else { throw ConfigError("monitor '\(match)': workspace names must be strings") }
-                guard seen.insert(n).inserted else { throw ConfigError("workspace '\(n)' is listed twice") }
+                guard let n = v.string, !n.isEmpty else {
+                    throw ConfigError("monitor '\(match)': workspace names must be strings")
+                }
+                guard seen.insert(n).inserted else {
+                    throw ConfigError("workspace '\(n)' is listed twice")
+                }
                 names.append(n)
             }
             if match == "*" {
-                guard !wildcard else { throw ConfigError("only one monitor may match \"*\"") }
+                guard !wildcard else {
+                    throw ConfigError("only one monitor may match \"*\"")
+                }
                 wildcard = true
             }
             c.monitors.append(MonitorRule(match: match, workspaces: names))
         }
 
         func knownWorkspace(_ name: String, _ context: String) throws(ConfigError) {
-            guard seen.contains(name) else { throw ConfigError("\(context): unknown workspace '\(name)'") }
+            guard seen.contains(name) else {
+                throw ConfigError("\(context): unknown workspace '\(name)'")
+            }
         }
 
         if let t = try table(root, "bindings") {
             for key in t.keys {
-                guard let value = t[key]?.string else { throw ConfigError("binding '\(key)': value must be a string") }
+                guard let value = t[key]?.string else {
+                    throw ConfigError("binding '\(key)': value must be a string")
+                }
                 let combo: KeyCombo
                 let command: Command
                 do {
@@ -103,14 +117,22 @@ public struct Config: Sendable {
 
         for t in try tables(root, "rule") {
             try checkKeys(t, ["app", "title", "workspace", "float"], in: "rule")
-            guard let app = try string(t, "app") else { throw ConfigError("rule: missing 'app'") }
+            guard let app = try string(t, "app") else {
+                throw ConfigError("rule: missing 'app'")
+            }
             let title = try string(t, "title")
             let workspace = try string(t, "workspace")
             if let w = workspace { try knownWorkspace(w, "rule '\(app)'") }
             c.rules.append(AppRule(
-                app: app, title: title, workspace: workspace, float: try bool(t, "float"),
-                appRegex: try regex(app), titleRegex: try title.map { s throws(ConfigError) in try regex(s) }))
+                app: app,
+                title: title,
+                workspace: workspace,
+                float: try bool(t, "float"),
+                appRegex: try regex(app),
+                titleRegex: try title.map { s throws(ConfigError) in try regex(s) }
+            ))
         }
+
         if let t = try table(root, "bar") {
             try checkKeys(t, ["background", "item-background", "foreground", "workspace-font", "label-font"], in: "bar")
             if let v = try color(t, "background") { c.bar.background = v }
@@ -119,22 +141,28 @@ public struct Config: Sendable {
             if let v = try font(t, "workspace-font") { c.bar.workspaceFont = v }
             if let v = try font(t, "label-font") { c.bar.labelFont = v }
         }
+
         return c
     }
 
     // MARK: - helpers
 
     private static func color(_ t: TOMLTable, _ key: String) throws(ConfigError) -> UInt32? {
-        guard let s = try string(t, key) else { return nil }
+        guard let s = try string(t, key) else {
+            return nil
+        }
         let hex = s.lowercased()
         guard hex.hasPrefix("0x"), hex.count == 10, let v = UInt32(hex.dropFirst(2), radix: 16) else {
             throw ConfigError("bar.\(key): '\(s)' must be 0xAARRGGBB")
         }
+
         return v
     }
 
     private static func font(_ t: TOMLTable, _ key: String) throws(ConfigError) -> FontSpec? {
-        guard let s = try string(t, key) else { return nil }
+        guard let s = try string(t, key) else {
+            return nil
+        }
         do { return try FontSpec.parse(s) } catch { throw ConfigError("bar.\(key): \(error.message)") }
     }
 
@@ -145,38 +173,60 @@ public struct Config: Sendable {
     }
 
     private static func table(_ t: TOMLTable, _ key: String) throws(ConfigError) -> TOMLTable? {
-        guard let v = t[key] else { return nil }
-        guard let table = v.table else { throw ConfigError("'\(key)' must be a table") }
+        guard let v = t[key] else {
+            return nil
+        }
+        guard let table = v.table else {
+            throw ConfigError("'\(key)' must be a table")
+        }
         return table
     }
 
     private static func tables(_ t: TOMLTable, _ key: String) throws(ConfigError) -> [TOMLTable] {
-        guard let v = t[key] else { return [] }
-        guard let array = v.array else { throw ConfigError("'\(key)' must be written as [[\(key)]]") }
+        guard let v = t[key] else {
+            return []
+        }
+        guard let array = v.array else {
+            throw ConfigError("'\(key)' must be written as [[\(key)]]")
+        }
+
         var out: [TOMLTable] = []
         for item in array {
-            guard let table = item.table else { throw ConfigError("'\(key)' must be written as [[\(key)]]") }
+            guard let table = item.table else {
+                throw ConfigError("'\(key)' must be written as [[\(key)]]")
+            }
             out.append(table)
         }
+
         return out
     }
 
     private static func number(_ t: TOMLTable, _ key: String) throws(ConfigError) -> Double? {
-        guard let v = t[key] else { return nil }
+        guard let v = t[key] else {
+            return nil
+        }
         if let i = v.int { return Double(i) }
         if let d = v.double { return d }
         throw ConfigError("'\(key)' must be a number")
     }
 
     private static func bool(_ t: TOMLTable, _ key: String) throws(ConfigError) -> Bool? {
-        guard let v = t[key] else { return nil }
-        guard let b = v.bool else { throw ConfigError("'\(key)' must be true or false") }
+        guard let v = t[key] else {
+            return nil
+        }
+        guard let b = v.bool else {
+            throw ConfigError("'\(key)' must be true or false")
+        }
         return b
     }
 
     private static func string(_ t: TOMLTable, _ key: String) throws(ConfigError) -> String? {
-        guard let v = t[key] else { return nil }
-        guard let s = v.string else { throw ConfigError("'\(key)' must be a string") }
+        guard let v = t[key] else {
+            return nil
+        }
+        guard let s = v.string else {
+            throw ConfigError("'\(key)' must be a string")
+        }
         return s
     }
 

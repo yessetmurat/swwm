@@ -39,8 +39,14 @@ final class AppConnection {
     // this long for a hung app's window it hid.
     static let answerTimeout: Float = 30
 
-    init(app: NSRunningApplication, ax: AXThread, events: AppEvents, adopting: Bool, focusTicket: FocusTicket,
-         screen: ScreenLock) {
+    init(
+        app: NSRunningApplication,
+        ax: AXThread,
+        events: AppEvents,
+        adopting: Bool,
+        focusTicket: FocusTicket,
+        screen: ScreenLock
+    ) {
         self.screen = screen
         self.app = app
         self.ax = ax
@@ -55,18 +61,24 @@ final class AppConnection {
     /// An app that gave no answer is asked again at its next window event. AX
     /// thread.
     func connect() {
-        guard observer == nil, !registering, !app.isTerminated else { return }
+        guard observer == nil, !registering, !app.isTerminated else {
+            return
+        }
+
         registering = true
         queue.async { [self] in
             let observer = Self.register(pid)
             watcher = observer
             if observer != nil { reportWindows() }
+
             ax.perform { [self] in
                 registering = false
+
                 guard let observer, !app.isTerminated else {
                     log.debug("connect \(self.app.localizedName ?? "?", privacy: .public): no answer")
                     return
                 }
+
                 self.observer = observer
                 ax.add(AXObserverGetRunLoopSource(observer))
             }
@@ -89,10 +101,14 @@ final class AppConnection {
     /// when swwm started adopts them. Not while the screen is locked: apps
     /// list no windows then (AX hands out the app element for each). Queue.
     private func reportWindows() {
-        guard watcher != nil, !screen.isLocked else { return }
+        guard watcher != nil, !screen.isLocked else {
+            return
+        }
+
         let found = listed()
         let adopt = adopting && !reported
         reported = true
+
         DispatchQueue.main.async { [self] in events?.appWindows(found, pid: pid, adopting: adopt) }
     }
 
@@ -102,6 +118,7 @@ final class AppConnection {
             let el = AXUIElementCreateApplication(pid)
             let win: AXUIElement? = Self.patiently(el) { el.attribute(kAXFocusedWindowAttribute) }
             let w = win.flatMap { report($0, listed: nil) }
+
             DispatchQueue.main.async { [self] in events?.focusChanged(w, pid: pid) }
         }
     }
@@ -112,6 +129,7 @@ final class AppConnection {
         queue.async { [self] in
             let frame = window(id).flatMap { w in Self.patiently(w.element) { w.frame } }
             if frame != nil { answered() }
+
             DispatchQueue.main.async { reply(frame) }
         }
     }
@@ -125,15 +143,22 @@ final class AppConnection {
     /// A write not started yet is replaced by a newer one. One the app did
     /// not take is reported: the window stays where it was.
     private func write(_ id: WindowID, _ w: WindowWrite) {
-        guard writes.put(id, w) else { return }
+        guard writes.put(id, w) else {
+            return
+        }
+
         queue.async { [self] in
-            guard let next = writes.take(id), let win = window(id) else { return }
+            guard let next = writes.take(id), let win = window(id) else {
+                return
+            }
+
             let result = Self.patiently(win.element) { () -> AXError in
                 switch next {
                 case .frame(let r): return win.setFrame(r)
                 case .position(let p): return win.setPosition(p)
                 }
             }
+
             switch result {
             case .success:
                 answered()
@@ -148,7 +173,10 @@ final class AppConnection {
 
     func raise(_ id: WindowID) {
         queue.async { [self] in
-            guard let w = window(id) else { return }
+            guard let w = window(id) else {
+                return
+            }
+
             Self.patiently(w.element) { w.raise() }
         }
     }
@@ -156,7 +184,10 @@ final class AppConnection {
     /// Focuses the window, unless focus moved on since `ticket` was taken.
     func focus(_ id: WindowID, ticket: Int) {
         queue.async { [self] in
-            guard let w = window(id) else { return }
+            guard let w = window(id) else {
+                return
+            }
+
             Self.patiently(w.element) { focusTicket.run(ticket, w.focusSteps) }
         }
     }
@@ -180,38 +211,57 @@ final class AppConnection {
     /// again. Queue.
     private func answered() {
         let ids = answers.answered()
-        guard !ids.isEmpty else { return }
+        guard !ids.isEmpty else {
+            return
+        }
+
         DispatchQueue.main.async { [self] in events?.appAnswered(ids) }
     }
 
     /// A window the app reported, for commands. Queue.
     private func window(_ id: WindowID) -> AXWindow? {
-        elements[id].map { AXWindow(element: $0, pid: pid, id: id, appName: app.localizedName ?? "") }
+        elements[id].map { AXWindow(
+            element: $0,
+            pid: pid,
+            id: id,
+            appName: app.localizedName ?? ""
+        ) }
     }
 
     /// An AX notification of this app. AX thread; the work goes to the queue,
     /// in order.
     func handle(_ element: AXUIElement, _ notification: String, _ refcon: UnsafeMutableRawPointer?) {
         let id = refcon.map { WindowID(UInt(bitPattern: $0)) }
+
         queue.async { [self] in
             switch notification {
             case kAXWindowCreatedNotification, kAXWindowDeminiaturizedNotification:
-                guard let w = report(element, listed: nil) else { return }
+                guard let w = report(element, listed: nil) else {
+                    return
+                }
+
                 DispatchQueue.main.async { [self] in events?.windowAppeared(w) }
             case kAXFocusedWindowChangedNotification, kAXMainWindowChangedNotification:
                 let w = report(element, listed: nil)
                 DispatchQueue.main.async { [self] in events?.focusChanged(w, pid: pid) }
             case kAXUIElementDestroyedNotification:
-                guard let id else { return }
+                guard let id else {
+                    return
+                }
+
                 elements[id] = nil
                 watched.remove(id)
                 writes.forget(id)
+
                 let rest = listed()
                 DispatchQueue.main.async { [self] in events?.windowGone(id, listed: rest) }
             case kAXWindowMiniaturizedNotification:
                 if let id { DispatchQueue.main.async { [self] in events?.windowMinimized(id) } }
             case kAXTitleChangedNotification:
-                guard let id else { return }
+                guard let id else {
+                    return
+                }
+
                 let title: String = Self.patiently(element) { element.attribute(kAXTitleAttribute) ?? "" }
                 DispatchQueue.main.async { [self] in events?.titleChanged(id, title) }
             default:
@@ -227,6 +277,7 @@ final class AppConnection {
         let el = AXUIElementCreateApplication(pid)
         let list: [AXUIElement] = Self.patiently(el) { el.attribute(kAXWindowsAttribute) ?? [] }
         let ids = Set(list.compactMap(Self.windowID))
+
         return list.compactMap { report($0, listed: ids) }
     }
 
@@ -238,20 +289,38 @@ final class AppConnection {
             log.debug("\(self.app.localizedName ?? "?", privacy: .public): no window number (\(_AXUIElementGetWindow(e, &n).rawValue, privacy: .public))")
             return nil
         }
+
         let ids = listed ?? {
             let el = AXUIElementCreateApplication(pid)
             let list: [AXUIElement] = Self.patiently(el) { el.attribute(kAXWindowsAttribute) ?? [] }
             return Set(list.compactMap(Self.windowID))
         }()
+
         let window = Self.patiently(e) { () -> AppWindow in
-            let w = AXWindow(element: e, pid: pid, id: id, appName: app.localizedName ?? "")
+            let w = AXWindow(
+                element: e,
+                pid: pid,
+                id: id,
+                appName: app.localizedName ?? ""
+            )
             let button: AXUIElement? = e.attribute(kAXFullScreenButtonAttribute)
-            return AppWindow(id: id, pid: pid, app: w.appName, title: w.title, frame: w.frame ?? .zero,
-                             layer: WindowServer.window(id)?.layer ?? 0, role: e.attribute(kAXRoleAttribute),
-                             subrole: e.attribute(kAXSubroleAttribute), isFullScreen: w.isFullScreen,
-                             isMinimized: w.isMinimized, isResizable: w.isResizable, hasFullScreenButton: button != nil,
-                             listed: ids)
+            return AppWindow(
+                id: id,
+                pid: pid,
+                app: w.appName,
+                title: w.title,
+                frame: w.frame ?? .zero,
+                layer: WindowServer.window(id)?.layer ?? 0,
+                role: e.attribute(kAXRoleAttribute),
+                subrole: e.attribute(kAXSubroleAttribute),
+                isFullScreen: w.isFullScreen,
+                isMinimized: w.isMinimized,
+                isResizable: w.isResizable,
+                hasFullScreenButton: button != nil,
+                listed: ids
+            )
         }
+
         elements[id] = e
         watch(e, id)
         return window
@@ -260,12 +329,20 @@ final class AppConnection {
     /// Window-level notifications carry the window ID as refcon: a destroyed
     /// element can no longer tell its ID. Queue.
     private func watch(_ e: AXUIElement, _ id: WindowID) {
-        guard let watcher, watched.insert(id).inserted else { return }
+        guard let watcher, watched.insert(id).inserted else {
+            return
+        }
+
         let refcon = UnsafeMutableRawPointer(bitPattern: UInt(id))
         Self.patiently(e) {
             for n in [kAXUIElementDestroyedNotification, kAXWindowMiniaturizedNotification,
                       kAXWindowDeminiaturizedNotification, kAXTitleChangedNotification] {
-                AXObserverAddNotification(watcher, e, n as CFString, refcon)
+                AXObserverAddNotification(
+                    watcher,
+                    e,
+                    n as CFString,
+                    refcon
+                )
             }
         }
     }
@@ -278,17 +355,36 @@ final class AppConnection {
     /// An observer for the app's window events, once the app answers.
     private static func register(_ pid: pid_t) -> AXObserver? {
         var observer: AXObserver?
-        guard AXObserverCreate(pid, axCallback, &observer) == .success, let observer else { return nil }
+        guard AXObserverCreate(pid, axCallback, &observer) == .success, let observer else {
+            return nil
+        }
+
         let el = AXUIElementCreateApplication(pid)
         return patiently(el) {
-            let created = AXObserverAddNotification(observer, el, kAXWindowCreatedNotification as CFString, nil)
+            let created = AXObserverAddNotification(
+                observer,
+                el,
+                kAXWindowCreatedNotification as CFString,
+                nil
+            )
             guard created == .success || created == .notificationAlreadyRegistered else {
                 log.debug("register \(pid, privacy: .public): \(created.rawValue, privacy: .public)")
                 return nil
             }
-            AXObserverAddNotification(observer, el, kAXFocusedWindowChangedNotification as CFString, nil)
+
+            AXObserverAddNotification(
+                observer,
+                el,
+                kAXFocusedWindowChangedNotification as CFString,
+                nil
+            )
             // Switching native tabs reports only a main window change.
-            AXObserverAddNotification(observer, el, kAXMainWindowChangedNotification as CFString, nil)
+            AXObserverAddNotification(
+                observer,
+                el,
+                kAXMainWindowChangedNotification as CFString,
+                nil
+            )
             return observer
         }
     }
@@ -304,9 +400,14 @@ final class AppConnection {
     }
 }
 
-private func axCallback(_ observer: AXObserver, _ element: AXUIElement, _ notification: CFString,
-                        _ refcon: UnsafeMutableRawPointer?) {
+private func axCallback(
+    _ observer: AXObserver,
+    _ element: AXUIElement,
+    _ notification: CFString,
+    _ refcon: UnsafeMutableRawPointer?
+) {
     var pid: pid_t = 0
     AXUIElementGetPid(element, &pid)
+
     Connections.current?.connection(pid)?.handle(element, notification as String, refcon)
 }

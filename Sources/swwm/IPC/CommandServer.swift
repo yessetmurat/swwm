@@ -23,6 +23,7 @@ final class CommandServer {
     func start() {
         unlink(Socket.path)  // left by a crash
         fd = Socket.make()
+
         var addr = Socket.address()
         let bound = withUnsafePointer(to: &addr) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
@@ -31,6 +32,7 @@ final class CommandServer {
             log.error("cannot listen on \(Socket.path, privacy: .public): \(String(cString: strerror(errno)), privacy: .public)")
             return
         }
+
         chmod(Socket.path, 0o600)
         let listener = fd
         queue.async { [weak self] in
@@ -46,7 +48,10 @@ final class CommandServer {
     }
 
     func stop() {
-        guard fd >= 0 else { return }
+        guard fd >= 0 else {
+            return
+        }
+
         close(fd)
         fd = -1
         unlink(Socket.path)
@@ -55,9 +60,19 @@ final class CommandServer {
     private func serve(_ c: Int32) {
         defer { close(c) }
         var on: Int32 = 1
-        setsockopt(c, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
+        setsockopt(
+            c,
+            SOL_SOCKET,
+            SO_NOSIGPIPE,
+            &on,
+            socklen_t(MemoryLayout<Int32>.size)
+        )
         Socket.setTimeout(c, seconds: 1)
-        guard let text = Socket.read(c, untilNewline: true) else { return }
+
+        guard let text = Socket.read(c, untilNewline: true) else {
+            return
+        }
+
         let line = text.split(separator: "\n", omittingEmptySubsequences: false).first.map(String.init) ?? ""
         let reply: Reply
         do {
@@ -66,6 +81,7 @@ final class CommandServer {
         } catch {
             reply = .error(error.message)
         }
+
         Socket.write(c, reply.wire)
     }
 }

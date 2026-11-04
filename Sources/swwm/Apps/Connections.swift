@@ -41,26 +41,33 @@ final class Connections {
     func flush() {
         let all = map.withLock { Array($0.values) }
         let group = DispatchGroup()
+
         for c in all { DispatchQueue.global().async(group: group) { c.flush(timeout: Self.quitFlush) } }
         group.wait()
     }
 
     func start() {
         Connections.current = self
+
         let running = NSWorkspace.shared.runningApplications.filter(\.isManageable)
         startPids = Set(running.map(\.processIdentifier))
         events.startApps(startPids)
         for app in running { connect(app) }
+
         // While the screen is locked apps list no windows: they are reported
         // once it is unlocked.
         let dnc = DistributedNotificationCenter.default()
         for (name, locked) in [("com.apple.screenIsLocked", true), ("com.apple.screenIsUnlocked", false)] {
             tokens.append(dnc.addObserver(forName: Notification.Name(name), object: nil, queue: .main) { [weak self] _ in
-                guard let self else { return }
+                guard let self else {
+                    return
+                }
+
                 screen.isLocked = locked
                 if !locked { map.withLock { Array($0.values) }.forEach { $0.rescan() } }
             })
         }
+
         let nc = NSWorkspace.shared.notificationCenter
         func on(_ name: Notification.Name, _ handle: @escaping (NSRunningApplication) -> Void) {
             tokens.append(nc.addObserver(forName: name, object: nil, queue: .main) { note in
@@ -69,11 +76,15 @@ final class Connections {
                 }
             })
         }
+
         on(NSWorkspace.didLaunchApplicationNotification) { [weak self] app in
             if app.isManageable { self?.connect(app) }
         }
         on(NSWorkspace.didTerminateApplicationNotification) { [weak self] app in
-            guard let self else { return }
+            guard let self else {
+                return
+            }
+
             let pid = app.processIdentifier
             if let c = map.withLock({ $0.removeValue(forKey: pid) }) { ax.perform { c.disconnect() } }
             events.appTerminated(pid)
@@ -85,7 +96,10 @@ final class Connections {
             self?.connection(app.processIdentifier)?.rescan()
         }
         on(NSWorkspace.didActivateApplicationNotification) { [weak self] app in
-            guard app.isManageable else { return }
+            guard app.isManageable else {
+                return
+            }
+
             self?.connect(app)
             self?.connection(app.processIdentifier)?.readFocus()
         }
@@ -94,21 +108,34 @@ final class Connections {
     /// A window reached the screen: an app with no connection yet, or one
     /// that gave no answer before, is asked again.
     func serverEvent(_ e: WindowServerEvent) {
-        guard case .added(let id) = e, let pid = WindowServer.window(id)?.pid,
-              let app = NSRunningApplication(processIdentifier: pid), app.isManageable else { return }
+        guard case .added(let id) = e,
+              let pid = WindowServer.window(id)?.pid,
+              let app = NSRunningApplication(processIdentifier: pid),
+              app.isManageable else {
+            return
+        }
+
         connect(app)
     }
 
     /// Main.
     private func connect(_ app: NSRunningApplication) {
         let pid = app.processIdentifier
+
         let c = map.withLock { map in
             if let c = map[pid] { return c }
-            let c = AppConnection(app: app, ax: ax, events: events, adopting: startPids.contains(pid), focusTicket: focusTicket,
-                                  screen: screen)
+            let c = AppConnection(
+                app: app,
+                ax: ax,
+                events: events,
+                adopting: startPids.contains(pid),
+                focusTicket: focusTicket,
+                screen: screen
+            )
             map[pid] = c
             return c
         }
+
         ax.perform { c.connect() }
     }
 }

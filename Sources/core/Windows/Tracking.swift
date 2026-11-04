@@ -22,7 +22,13 @@ public struct TrackContext: Sendable {
     public var appHidden: Bool               // cmd-H: its windows come back when the app unhides
     public var point: CGPoint                // window centre when adopting, else the cursor
 
-    public init(appTiles: [WindowID: CGRect], isChild: Bool, adopting: Bool, appHidden: Bool, point: CGPoint) {
+    public init(
+        appTiles: [WindowID: CGRect],
+        isChild: Bool,
+        adopting: Bool,
+        appHidden: Bool,
+        point: CGPoint
+    ) {
         self.appTiles = appTiles
         self.isChild = isChild
         self.adopting = adopting
@@ -38,19 +44,31 @@ public struct TrackContext: Sendable {
 /// tab bar check: when a tab closes, the next one is reported before the
 /// close, already alone. Takes the window from `remembered` only when it is
 /// managed.
-public func trackDecision(_ s: AppWindow, world: World, context c: TrackContext,
-                          remembered: inout Remembered, saved: SavedWorkspaces?) -> TrackDecision {
+public func trackDecision(
+    _ s: AppWindow,
+    world: World,
+    context c: TrackContext,
+    remembered: inout Remembered,
+    saved: SavedWorkspaces?
+) -> TrackDecision {
     // A floating window a crashed run left at the floating level is swwm's, not an app's panel.
     let raisedLastRun = s.layer == Int(WindowLevel.floating) && saved?.wasFloating(s.id, pid: s.pid) == true
-    guard !c.appHidden, s.isStandard, s.layer == 0 || c.isChild || (c.adopting && raisedLastRun), !s.isFullScreen,
+
+    guard !c.appHidden,
+          s.isStandard,
+          s.layer == 0 || c.isChild || (c.adopting && raisedLastRun),
+          !s.isFullScreen,
           !s.isMinimized else {
         return .skip
     }
+
     if let old = tabSibling(of: s.frame, among: c.appTiles.filter { !s.listed.contains($0.key) }) { return .takeOver(old) }
+
     let rule = world.config.rules.first { $0.matches(app: s.app, title: s.title) }
     let back = remembered.take(s.id)
     let floating = rule?.float == true || !s.isResizable || back?.floating == true
         || (c.adopting && saved?.wasFloating(s.id, pid: s.pid) == true)
+
     guard let target = back.flatMap({ world.workspace(named: $0.workspace)?.name })
         ?? saved?.workspace(of: s.id, pid: s.pid).flatMap({ world.workspace(named: $0)?.name })
         ?? rule?.workspace
@@ -58,5 +76,6 @@ public func trackDecision(_ s: AppWindow, world: World, context c: TrackContext,
         if let back { remembered.remember(s.id, back) }
         return .skip
     }
+
     return .manage(workspace: target, floating: floating)
 }

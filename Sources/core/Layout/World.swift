@@ -34,14 +34,20 @@ public final class World {
         self.config = config
         spaces = [:]
         for name in config.allWorkspaces { spaces[name] = old[name] ?? Workspace(name: name) }
+
         autoOrder.removeAll { name in
-            guard spaces[name] == nil else { return true }  // now a config workspace
+            // Now a config workspace.
+            guard spaces[name] == nil else {
+                return true
+            }
             spaces[name] = old[name]
             return false
         }
+
         autoOwner = autoOwner.filter { autoOrder.contains($0.key) }
         let orphans = old.filter { spaces[$0.key] == nil }.values
         updateMonitors(monitors)
+
         // Windows of workspaces the new config dropped go to the home display's active workspace.
         if let target = homeMonitor.flatMap(activeWorkspace(on:)).flatMap(workspace(named:)) {
             for ws in orphans {
@@ -59,9 +65,12 @@ public final class World {
         var owner: [Int: MonitorID] = [:]  // config monitor index -> display
 
         func take(_ i: Int, _ pick: (MonitorInfo) -> Bool) {
-            guard let k = free.firstIndex(where: pick) else { return }
+            guard let k = free.firstIndex(where: pick) else {
+                return
+            }
             owner[i] = free.remove(at: k).id
         }
+
         for (i, rule) in config.monitors.enumerated() where rule.match != "*" {
             if rule.match == "built-in" {
                 take(i) { $0.isBuiltin }
@@ -106,7 +115,9 @@ public final class World {
     public var workspaceNames: [String] { order }
 
     public func activeWorkspace(on m: MonitorID) -> String? {
-        guard monitors.contains(where: { $0.id == m }) else { return nil }
+        guard monitors.contains(where: { $0.id == m }) else {
+            return nil
+        }
         return active[m]
     }
 
@@ -124,10 +135,17 @@ public final class World {
     }
 
     public func workArea(of m: MonitorID) -> CGRect {
-        guard let f = monitorInfo(m)?.frame else { return .zero }
+        guard let f = monitorInfo(m)?.frame else {
+            return .zero
+        }
+
         let s = config.settings
-        return CGRect(x: f.minX + s.padding, y: f.minY + s.barHeight + s.padding,
-                      width: f.width - 2 * s.padding, height: f.height - s.barHeight - 2 * s.padding)
+        return CGRect(
+            x: f.minX + s.padding,
+            y: f.minY + s.barHeight + s.padding,
+            width: f.width - 2 * s.padding,
+            height: f.height - s.barHeight - 2 * s.padding
+        )
     }
 
     // MARK: - Workspaces and windows
@@ -142,7 +160,10 @@ public final class World {
     /// area when zoomed, or its floating frame (centered when it would not
     /// show on its display).
     public func shownFrame(of w: WindowID) -> CGRect? {
-        guard let ws = workspace(containing: w), let m = home[ws.name], let info = monitorInfo(m) else { return nil }
+        guard let ws = workspace(containing: w), let m = home[ws.name], let info = monitorInfo(m) else {
+            return nil
+        }
+
         let area = workArea(of: m)
         if let f = ws.floating[w] { return shownFloatingFrame(f, on: info, area: area) }
         return ws.zoomed == w ? area : ws.tree.frames(in: area, gap: config.settings.gap)[w]
@@ -150,40 +171,55 @@ public final class World {
 
     /// True when `w`'s workspace is the one its display shows.
     public func isVisible(_ w: WindowID) -> Bool {
-        guard let ws = workspace(containing: w), let m = home[ws.name] else { return false }
+        guard let ws = workspace(containing: w), let m = home[ws.name] else {
+            return false
+        }
         return activeWorkspace(on: m) == ws.name
     }
 
     /// Makes `workspace` the one its display shows.
     public func show(_ workspace: String) {
-        guard let m = home[workspace] else { return }
+        guard let m = home[workspace] else {
+            return
+        }
         active[m] = workspace
     }
 
     public func add(_ w: WindowID, to workspace: String, floatingFrame: CGRect?) {
-        guard let ws = spaces[workspace], self.workspace(containing: w) == nil else { return }
+        guard let ws = spaces[workspace], self.workspace(containing: w) == nil else {
+            return
+        }
+
         if let f = floatingFrame {
             ws.floating[w] = f
         } else {
             ws.tree.insert(w, splitting: ws.mru.first { ws.tree.contains($0) })
         }
+
         ws.mru.insert(w, at: 0)  // newest first, so unfocused additions still dwindle
     }
 
     /// Returns the display the window was on.
     @discardableResult
     public func remove(_ w: WindowID) -> MonitorID? {
-        guard let ws = workspace(containing: w) else { return nil }
+        guard let ws = workspace(containing: w) else {
+            return nil
+        }
+
         ws.tree.remove(w)
         ws.floating[w] = nil
         ws.mru.removeAll { $0 == w }
         if ws.zoomed == w { ws.zoomed = nil }
+
         return home[ws.name]
     }
 
     /// Puts `new` where `old` is: same tile, floating frame, zoom and focus order.
     public func replace(_ old: WindowID, with new: WindowID) {
-        guard let ws = workspace(containing: old) else { return }
+        guard let ws = workspace(containing: old) else {
+            return
+        }
+
         ws.tree.leaf(old)?.window = new
         if let f = ws.floating.removeValue(forKey: old) { ws.floating[new] = f }
         ws.mru = ws.mru.map { $0 == old ? new : $0 }
@@ -191,14 +227,20 @@ public final class World {
     }
 
     public func move(_ w: WindowID, to workspace: String) {
-        guard let from = self.workspace(containing: w), from.name != workspace else { return }
+        guard let from = self.workspace(containing: w), from.name != workspace else {
+            return
+        }
+
         let floating = from.floating[w]
         remove(w)
         add(w, to: workspace, floatingFrame: floating)
     }
 
     public func noteFocused(_ w: WindowID) {
-        guard let ws = workspace(containing: w) else { return }
+        guard let ws = workspace(containing: w) else {
+            return
+        }
+
         ws.mru.removeAll { $0 == w }
         ws.mru.insert(w, at: 0)
     }
@@ -211,7 +253,10 @@ public final class World {
     /// The next or previous workspace of display `m`, wrapping around.
     public func step(on m: MonitorID, forward: Bool) -> String? {
         let list = workspaces(on: m)
-        guard !list.isEmpty else { return nil }
+        guard !list.isEmpty else {
+            return nil
+        }
+
         let i = activeWorkspace(on: m).flatMap(list.firstIndex(of:)) ?? 0
         return list[(i + (forward ? 1 : list.count - 1)) % list.count]
     }

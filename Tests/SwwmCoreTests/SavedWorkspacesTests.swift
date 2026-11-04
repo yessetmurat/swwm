@@ -16,6 +16,7 @@ import Testing
     w.add(11, to: "3", floatingFrame: nil)
     let saved = SavedWorkspaces(world: w, pids: [10: 100, 11: 101])
     let back = try JSONDecoder().decode(SavedWorkspaces.self, from: JSONEncoder().encode(saved))
+
     #expect(back.workspace(of: 10, pid: 100) == "1")
     #expect(back.workspace(of: 11, pid: 101) == "3")
 }
@@ -24,6 +25,7 @@ import Testing
     let w = world([B])
     w.add(10, to: "2", floatingFrame: nil)
     let saved = SavedWorkspaces(world: w, pids: [10: 100])
+
     #expect(saved.workspace(of: 10, pid: 999) == nil)  // a reused window ID after a reboot
     #expect(saved.workspace(of: 12, pid: 100) == nil)
 }
@@ -37,6 +39,7 @@ private let rect = CGRect(x: 0, y: 0, width: 1000, height: 600)
     let b = DwindleTree()
     for w in [3, 1, 2] as [WindowID] { b.insert(w, splitting: nil) }  // adopted in another order
     b.restore(a.shape!)
+
     #expect(b.frames(in: rect, gap: 8) == a.frames(in: rect, gap: 8))
 }
 
@@ -46,6 +49,7 @@ private let rect = CGRect(x: 0, y: 0, width: 1000, height: 600)
     let b = DwindleTree()
     for w in [3, 4, 1] as [WindowID] { b.insert(w, splitting: nil) }  // 2 closed, 4 is new
     b.restore(a.shape!)
+
     #expect(b.windows == [1, 3, 4])
 }
 
@@ -59,6 +63,7 @@ private let rect = CGRect(x: 0, y: 0, width: 1000, height: 600)
     let fresh = world([B])
     for id in [11, 10] as [WindowID] { fresh.add(id, to: "3", floatingFrame: nil) }
     fresh.restore(try JSONDecoder().decode(SavedWorkspaces.self, from: data))
+
     #expect(fresh.activeWorkspace(on: 1) == "3")
     #expect(fresh.workspace(named: "3")!.tree.frames(in: rect, gap: 0) == w.workspace(named: "3")!.tree.frames(in: rect, gap: 0))
 }
@@ -68,6 +73,7 @@ private let rect = CGRect(x: 0, y: 0, width: 1000, height: 600)
     w.add(10, to: "1", floatingFrame: CGRect(x: 0, y: 0, width: 100, height: 100))
     w.add(11, to: "1", floatingFrame: nil)
     let back = try JSONDecoder().decode(SavedWorkspaces.self, from: JSONEncoder().encode(SavedWorkspaces(world: w, pids: [10: 7, 11: 7])))
+
     #expect(back.wasFloating(10, pid: 7))
     #expect(!back.wasFloating(11, pid: 7))
     #expect(!back.wasFloating(10, pid: 8))
@@ -78,6 +84,7 @@ private let rect = CGRect(x: 0, y: 0, width: 1000, height: 600)
     before.add(5, to: "3", floatingFrame: nil)
     let old = SavedWorkspaces(world: before, pids: [5: 20])
     let merged = SavedWorkspaces(world: world([B]), pids: [:]).merging(old, pending: [20], untouched: [])
+
     #expect(merged.workspace(of: 5, pid: 20) == "3")
 }
 
@@ -86,6 +93,7 @@ private let rect = CGRect(x: 0, y: 0, width: 1000, height: 600)
     before.add(5, to: "3", floatingFrame: nil)
     let old = SavedWorkspaces(world: before, pids: [5: 21])
     let merged = SavedWorkspaces(world: world([B]), pids: [:]).merging(old, pending: [20], untouched: [])
+
     #expect(merged.workspace(of: 5, pid: 21) == nil)
 }
 
@@ -96,6 +104,7 @@ private let rect = CGRect(x: 0, y: 0, width: 1000, height: 600)
     let now = world([B])
     now.add(6, to: "3", floatingFrame: nil)
     let new = SavedWorkspaces(world: now, pids: [6: 30])
+
     #expect(new.merging(old, pending: [20], untouched: ["3"]).trees?["3"] == old.trees?["3"])
     #expect(new.merging(old, pending: [20], untouched: []).trees?["3"] == new.trees?["3"])
 }

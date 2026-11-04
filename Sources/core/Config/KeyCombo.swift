@@ -34,6 +34,7 @@ public struct KeyCombo: Hashable, Sendable {
         guard let key = parts.last, let code = keyCodes[key] else {
             throw CommandError("unknown key in '\(s)'")
         }
+
         var mods: Modifiers = []
         for name in parts.dropLast() {
             guard let m = Modifiers.names[name], !mods.contains(m) else {
@@ -41,6 +42,7 @@ public struct KeyCombo: Hashable, Sendable {
             }
             mods.insert(m)
         }
+
         return KeyCombo(keyCode: code, modifiers: mods)
     }
 

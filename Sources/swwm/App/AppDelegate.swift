@@ -32,13 +32,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         server.start()
         self.server = server
+
         let prompt = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
         if AXIsProcessTrustedWithOptions(prompt) {
             start()
         } else {
             // Wait for the user to grant Accessibility; no restart needed.
             Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] timer in
-                guard AXIsProcessTrusted() else { return }
+                guard AXIsProcessTrusted() else {
+                    return
+                }
                 timer.invalidate()
                 self?.start()
             }
@@ -49,6 +52,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // A hung app must not stall swwm (and the event tap) for the 6 s default.
         AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), 0.25)
         Fonts.registerBundled()
+
         var apply: (Config) -> Void = { _ in }
         let loader = ConfigLoader { apply($0) }
         let config = loader.load()
@@ -57,6 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let connections = Connections(events: manager)
         manager.connections = connections
         let bar = BarController(manager: manager)
+
         apply = { config in
             manager.world.apply(config: config)
             tap.update(config: config)
@@ -64,6 +69,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             manager.applyShadowAll()
             bar.rebuild()
         }
+
         manager.dockModuleInstalled = DockModuleInstaller.isInstalled
         manager.onShadowUnavailable = { [weak self] in
             self?.notify("Window shadows are unavailable: the Dock module did not answer. "
@@ -89,13 +95,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         manager.start()
         bar.rebuild()
+
         let status = SystemStatus { bar.update(status: $0) }
         status.start()
         self.status = status
+
         // A new Dock drops the shadows; its payload comes up a few seconds later.
         // Dock is not a regular app: no launch notification, only this list.
         dockWatch = NSWorkspace.shared.observe(\.runningApplications, options: [.new]) { _, change in
-            guard change.newValue?.contains(where: { $0.bundleIdentifier == "com.apple.dock" }) == true else { return }
+            guard change.newValue?.contains(where: { $0.bundleIdentifier == "com.apple.dock" }) == true else {
+                return
+            }
+
             DispatchQueue.main.async {
                 manager.dock.whenReachable {
                     manager.applyShadowAll()
@@ -107,7 +118,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         connections.start()
         tap.start()
         loader.start()
-        (self.manager, self.tap, self.connections, self.loader, self.bar) = (manager, tap, connections, loader, bar)
+        (
+            self.manager,
+            self.tap,
+            self.connections,
+            self.loader,
+            self.bar
+        ) = (manager, tap, connections, loader, bar)
 
         NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main

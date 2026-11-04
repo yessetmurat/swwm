@@ -19,6 +19,7 @@ enum Fonts {
               let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else {
             return
         }
+
         for url in files where url.pathExtension == "ttf" {
             CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
         }
@@ -28,6 +29,7 @@ enum Fonts {
     /// "SemiBold" is IBMPlexMono-SmBld); falls back to a semibold system font.
     static func font(_ spec: FontSpec) -> NSFont {
         if let font = cache[spec] { return font }
+
         let font = lookUp(spec)
         cache[spec] = font
         return font
@@ -39,10 +41,12 @@ enum Fonts {
     private static func lookUp(_ spec: FontSpec) -> NSFont {
         let size = CGFloat(spec.size)
         let members = NSFontManager.shared.availableMembers(ofFontFamily: spec.family) ?? []
+
         if let member = members.first(where: { ($0[1] as? String)?.caseInsensitiveCompare(spec.style) == .orderedSame }),
            let name = member[0] as? String, let font = NSFont(name: name, size: size) {
             return font
         }
+
         return spec.family.localizedCaseInsensitiveContains("mono")
             ? .monospacedSystemFont(ofSize: size, weight: .semibold)
             : .systemFont(ofSize: size, weight: .semibold)

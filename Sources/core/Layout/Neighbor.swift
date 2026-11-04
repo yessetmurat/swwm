@@ -10,7 +10,9 @@ import CoreGraphics
 /// The rect nearest to `w` on side `d` that overlaps it on the other axis.
 /// Ties go to the larger overlap, then to the one aligned closest to `w`.
 public func neighbor(of w: WindowID, _ d: Direction, in frames: [WindowID: CGRect]) -> WindowID? {
-    guard let me = frames[w] else { return nil }
+    guard let me = frames[w] else {
+        return nil
+    }
     let tolerance: CGFloat = 1
     let horizontal = d == .left || d == .right
 

@@ -12,6 +12,7 @@ import Testing
 @Test func clockFormat() {
     let d = ISO8601DateFormatter().date(from: "2026-11-03T09:54:00Z")!
     let utc = TimeZone(identifier: "UTC")!
+
     #expect(clockText(d, timeZone: utc) == "Tue 03 Nov 09:54 AM")
     #expect(clockText(d.addingTimeInterval(4 * 3600), timeZone: utc) == "Tue 03 Nov 01:54 PM")
 }
@@ -50,6 +51,7 @@ import Testing
 
 @Test func clockTicksOnTheNextWholeMinute() {
     let t = Date(timeIntervalSinceReferenceDate: 60 * 1000 + 30.2)
+
     #expect(nextMinute(after: t) == Date(timeIntervalSinceReferenceDate: 60 * 1001))
     #expect(nextMinute(after: Date(timeIntervalSinceReferenceDate: 60 * 1001)) == Date(timeIntervalSinceReferenceDate: 60 * 1002))
 }

@@ -18,7 +18,12 @@ struct AXWindow {
     let id: WindowID
     let appName: String
 
-    init(element: AXUIElement, pid: pid_t, id: WindowID, appName: String) {
+    init(
+        element: AXUIElement,
+        pid: pid_t,
+        id: WindowID,
+        appName: String
+    ) {
         self.element = element
         self.pid = pid
         self.id = id
@@ -38,8 +43,13 @@ struct AXWindow {
     /// Nil when the app does not tell (closing, or no answer).
     var frame: CGRect? {
         var origin = CGPoint.zero, size = CGSize.zero
-        guard let p: AXValue = element.attribute(kAXPositionAttribute), let s: AXValue = element.attribute(kAXSizeAttribute),
-              AXValueGetValue(p, .cgPoint, &origin), AXValueGetValue(s, .cgSize, &size) else { return nil }
+        guard let p: AXValue = element.attribute(kAXPositionAttribute),
+              let s: AXValue = element.attribute(kAXSizeAttribute),
+              AXValueGetValue(p, .cgPoint, &origin),
+              AXValueGetValue(s, .cgSize, &size) else {
+            return nil
+        }
+
         return CGRect(origin: origin, size: size)
     }
 
@@ -60,10 +70,12 @@ struct AXWindow {
         withoutEnhancedUI {
             var size = r.size
             result = position(r.origin)
+
             // An app that did not answer in time would make each of the next writes wait as long again.
             guard result != .cannotComplete else {
                 return
             }
+
             AXUIElementSetAttributeValue(element, kAXSizeAttribute as CFString, AXValueCreate(.cgSize, &size)!)
             position(r.origin)
         }
@@ -75,18 +87,23 @@ struct AXWindow {
     func resizableAxes() -> (width: Bool, height: Bool) {
         var axes = (width: false, height: false)
         withoutEnhancedUI {
-            guard let s = frame?.size else { return }
+            guard let s = frame?.size else {
+                return
+            }
+
             func size(_ w: CGFloat, _ h: CGFloat) -> CGSize {
                 var v = CGSize(width: w, height: h)
                 AXUIElementSetAttributeValue(element, kAXSizeAttribute as CFString, AXValueCreate(.cgSize, &v)!)
                 return frame?.size ?? s
             }
+
             var t = size(s.width + 1, s.height + 1)
             axes = (t.width != s.width, t.height != s.height)
             if !axes.width || !axes.height {
                 t = size(axes.width ? t.width : s.width - 1, axes.height ? t.height : s.height - 1)
                 axes = (axes.width || t.width != s.width, axes.height || t.height != s.height)
             }
+
             _ = size(s.width, s.height)
         }
         return axes
@@ -105,6 +122,7 @@ struct AXWindow {
         let app = AXUIElementCreateApplication(pid)
         let key = "AXEnhancedUserInterface" as CFString
         let on: Bool = app.attribute(key as String) ?? false
+
         if on { AXUIElementSetAttributeValue(app, key, kCFBooleanFalse) }
         body()
         if on { AXUIElementSetAttributeValue(app, key, kCFBooleanTrue) }

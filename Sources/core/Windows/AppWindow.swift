@@ -25,9 +25,21 @@ public struct AppWindow: Equatable, Sendable {
     public let hasFullScreenButton: Bool  // tells an app's main windows from its panels
     public let listed: Set<WindowID>      // the app's listed windows when this was read
 
-    public init(id: WindowID, pid: Int32, app: String, title: String, frame: CGRect, layer: Int, role: String?,
-                subrole: String?, isFullScreen: Bool, isMinimized: Bool, isResizable: Bool, hasFullScreenButton: Bool,
-                listed: Set<WindowID>) {
+    public init(
+        id: WindowID,
+        pid: Int32,
+        app: String,
+        title: String,
+        frame: CGRect,
+        layer: Int,
+        role: String?,
+        subrole: String?,
+        isFullScreen: Bool,
+        isMinimized: Bool,
+        isResizable: Bool,
+        hasFullScreenButton: Bool,
+        listed: Set<WindowID>
+    ) {
         self.id = id
         self.pid = pid
         self.app = app

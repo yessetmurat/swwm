@@ -12,6 +12,7 @@ import Testing
     var w = AnswerWatch()
     w.noAnswer(4)
     w.noAnswer(5)
+
     #expect(w.answered() == [4, 5])
     #expect(w.answered() == [])
 }

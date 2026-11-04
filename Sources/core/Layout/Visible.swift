@@ -14,6 +14,7 @@ public func visiblePoint(of rect: CGRect, under covers: [CGRect]) -> CGPoint? {
     let centre = CGPoint(x: rect.midX, y: rect.midY)
     func free(_ p: CGPoint) -> Bool { !covers.contains { $0.contains(p) } }
     if free(centre) { return centre }
+
     let n = 9
     var points: [CGPoint] = []
     for i in 0..<n {
@@ -22,5 +23,6 @@ public func visiblePoint(of rect: CGRect, under covers: [CGRect]) -> CGPoint? {
                                   y: rect.minY + rect.height * (CGFloat(j) + 0.5) / CGFloat(n)))
         }
     }
+
     return points.filter(free).min { hypot($0.x - centre.x, $0.y - centre.y) < hypot($1.x - centre.x, $1.y - centre.y) }
 }

@@ -14,7 +14,12 @@ public struct MonitorInfo: Equatable, Sendable {
     public var isBuiltin: Bool
     public var frame: CGRect  // global, top-left origin (AX coordinates)
 
-    public init(id: MonitorID, name: String, isBuiltin: Bool, frame: CGRect) {
+    public init(
+        id: MonitorID,
+        name: String,
+        isBuiltin: Bool,
+        frame: CGRect
+    ) {
         self.id = id
         self.name = name
         self.isBuiltin = isBuiltin

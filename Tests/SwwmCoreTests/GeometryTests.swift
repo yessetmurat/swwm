@@ -15,6 +15,7 @@ import Testing
 
 @Test func nearRespectsTolerance() {
     let a = CGRect(x: 0, y: 0, width: 100, height: 100), b = CGRect(x: 0, y: 0, width: 110, height: 100)
+
     #expect(!near(a, b))
     #expect(near(a, b, tolerance: 20))
 }

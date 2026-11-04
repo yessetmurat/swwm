@@ -14,6 +14,7 @@ private func err(_ s: String) -> String? {
 
 @Test func defaultParses() throws {
     let c = Config.default
+
     #expect(c.allWorkspaces == ["1", "2", "3", "4", "q", "w", "e", "r"])
     #expect(c.monitors.map(\.match) == ["built-in", "*"])
     #expect(c.bindings[try KeyCombo.parse("alt-h")] == .focus(.left))
@@ -33,6 +34,7 @@ private func err(_ s: String) -> String? {
 
 @Test func defaultRules() {
     let rules = Config.default.rules
+
     #expect(rules.first { $0.matches(app: "Ghostty", title: "zsh") }?.workspace == "1")
     #expect(rules.first { $0.matches(app: "Discord", title: "") }?.workspace == "2")
     #expect(rules.first { $0.matches(app: "Telegram", title: "") }?.workspace == "2")
@@ -42,6 +44,7 @@ private func err(_ s: String) -> String? {
 
 @Test func settingsParse() throws {
     let c = try Config.parse("[settings]\ngap = 20\nmouse-modifier = \"ctrl-alt\"\nfocus-follows-mouse = false")
+
     #expect(c.settings.gap == 20)
     #expect(c.settings.padding == 8)
     #expect(c.settings.mouseModifier == [.ctrl, .alt])
@@ -68,6 +71,7 @@ private func err(_ s: String) -> String? {
 
 @Test func barParses() throws {
     let c = try Config.parse("[bar]\nbackground = \"0x80112233\"\nlabel-font = \"Menlo:Bold:12.5\"")
+
     #expect(c.bar.background == 0x8011_2233)
     #expect(c.bar.labelFont == FontSpec(family: "Menlo", style: "Bold", size: 12.5))
     #expect(c.bar.foreground == 0xFFFF_FFFF)

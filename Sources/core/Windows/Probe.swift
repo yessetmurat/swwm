@@ -16,7 +16,12 @@ public enum ProbeStep: Equatable, Sendable {
 /// yet (an opening animation, Ghostty setting up) is asked again after each
 /// of `waits` (seconds since the first ask), then tiles; the size check
 /// floats it if it still refuses.
-public func probeStep(width: Bool, height: Bool, attempt: Int, waits: [Double]) -> ProbeStep {
+public func probeStep(
+    width: Bool,
+    height: Bool,
+    attempt: Int,
+    waits: [Double]
+) -> ProbeStep {
     if width != height { return .float }
     if !width, attempt < waits.count { return .askAgain(after: waits[attempt] - (attempt > 0 ? waits[attempt - 1] : 0)) }
     return .tile(learned: width ? true : nil)

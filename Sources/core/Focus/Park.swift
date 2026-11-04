@@ -27,13 +27,22 @@ public enum ParkStep: Equatable, Sendable {
 /// What is at `p` decides: `onScreen` front to back. Windows with alpha 0
 /// and the cursor (listed as a window when it sits on the point) take no
 /// click and do not count.
-public func parkStep(at p: CGPoint, onScreen: [ServerWindow], leaving: Set<WindowID>, desktopLayer: Int) -> ParkStep {
+public func parkStep(
+    at p: CGPoint,
+    onScreen: [ServerWindow],
+    leaving: Set<WindowID>,
+    desktopLayer: Int
+) -> ParkStep {
     let cursor = Int(CGWindowLevelForKey(.cursorWindow))
     var above: Set<WindowID> = []
+
     for w in onScreen where w.alpha > 0 && w.layer != cursor && w.bounds.contains(p) {
         if w.layer == desktopLayer && w.owner == "Finder" { return above.isEmpty ? .click : .wait(above) }
-        guard leaving.contains(w.id) else { return .noClick }
+        guard leaving.contains(w.id) else {
+            return .noClick
+        }
         above.insert(w.id)
     }
+
     return .noClick
 }

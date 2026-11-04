@@ -17,7 +17,12 @@ import SwwmCore
 final class SystemStatus {
 
     private let onChange: (Status) -> Void
-    private var status = Status(language: nil, clock: clockText(Date()), battery: nil, volume: nil)
+    private var status = Status(
+        language: nil,
+        clock: clockText(Date()),
+        battery: nil,
+        volume: nil
+    )
     private var timer: Timer?
     private var device = AudioObjectID(kAudioObjectUnknown)
     private lazy var deviceListener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in self?.refreshVolume() }
@@ -38,11 +43,14 @@ final class SystemStatus {
 
         let context = Unmanaged.passUnretained(self).toOpaque()
         if let source = IOPSNotificationCreateRunLoopSource({ ctx in
-            guard let ctx else { return }
+            guard let ctx else {
+                return
+            }
             Unmanaged<SystemStatus>.fromOpaque(ctx).takeUnretainedValue().refreshBattery()
         }, context)?.takeRetainedValue() {
             CFRunLoopAddSource(CFRunLoopGetMain(), source, .defaultMode)
         }
+
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -64,6 +72,7 @@ final class SystemStatus {
     private func startClock() {
         timer?.invalidate()
         refreshClock()
+
         let t = Timer(fire: nextMinute(after: Date()), interval: 60, repeats: true) { [weak self] _ in self?.refreshClock() }
         RunLoop.main.add(t, forMode: .common)
         timer = t
@@ -74,7 +83,11 @@ final class SystemStatus {
     private func publish(_ change: (inout Status) -> Void) {
         var s = status
         change(&s)
-        guard s != status else { return }
+
+        guard s != status else {
+            return
+        }
+
         status = s
         onChange(s)
     }
@@ -87,23 +100,30 @@ final class SystemStatus {
         let source = TISCopyCurrentKeyboardInputSource().takeRetainedValue()
         let languages = TISGetInputSourceProperty(source, kTISPropertyInputSourceLanguages)
             .map { Unmanaged<CFArray>.fromOpaque($0).takeUnretainedValue() as? [String] ?? [] } ?? []
+
         publish { $0.language = languageLabel(languages) }
     }
 
     private func refreshBattery() {
         var percent: Int?
         var onAC = false
+
         if let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
            let list = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef] {
             for ps in list {
                 guard let d = IOPSGetPowerSourceDescription(info, ps)?.takeUnretainedValue() as? [String: Any],
                       d[kIOPSTypeKey] as? String == kIOPSInternalBatteryType,
                       let current = d[kIOPSCurrentCapacityKey] as? Int,
-                      let max = d[kIOPSMaxCapacityKey] as? Int, max > 0 else { continue }
+                      let max = d[kIOPSMaxCapacityKey] as? Int,
+                      max > 0 else {
+                    continue
+                }
+
                 percent = current * 100 / max
                 onAC = d[kIOPSPowerSourceStateKey] as? String == kIOPSACPowerValue
             }
         }
+
         publish { $0.battery = batteryItem(percent: percent, onAC: onAC) }
     }
 
@@ -111,19 +131,50 @@ final class SystemStatus {
     private func bindDevice() {
         var volume = Self.address(kAudioHardwareServiceDeviceProperty_VirtualMainVolume, kAudioDevicePropertyScopeOutput)
         var mute = Self.address(kAudioDevicePropertyMute, kAudioDevicePropertyScopeOutput)
+
         if device != kAudioObjectUnknown {
-            AudioObjectRemovePropertyListenerBlock(device, &volume, .main, deviceListener)
-            AudioObjectRemovePropertyListenerBlock(device, &mute, .main, deviceListener)
+            AudioObjectRemovePropertyListenerBlock(
+                device,
+                &volume,
+                .main,
+                deviceListener
+            )
+            AudioObjectRemovePropertyListenerBlock(
+                device,
+                &mute,
+                .main,
+                deviceListener
+            )
         }
+
         var id = AudioObjectID(kAudioObjectUnknown)
         var size = UInt32(MemoryLayout<AudioObjectID>.size)
         var defaultOutput = Self.address(kAudioHardwarePropertyDefaultOutputDevice)
-        AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &defaultOutput, 0, nil, &size, &id)
+        AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject),
+            &defaultOutput,
+            0,
+            nil,
+            &size,
+            &id
+        )
         device = id
+
         if device != kAudioObjectUnknown {
-            AudioObjectAddPropertyListenerBlock(device, &volume, .main, deviceListener)
-            AudioObjectAddPropertyListenerBlock(device, &mute, .main, deviceListener)
+            AudioObjectAddPropertyListenerBlock(
+                device,
+                &volume,
+                .main,
+                deviceListener
+            )
+            AudioObjectAddPropertyListenerBlock(
+                device,
+                &mute,
+                .main,
+                deviceListener
+            )
         }
+
         refreshVolume()
     }
 
@@ -132,16 +183,33 @@ final class SystemStatus {
         var muteAddress = Self.address(kAudioDevicePropertyMute, kAudioDevicePropertyScopeOutput)
         var volume: Float?
         var muted = false
+
         if device != kAudioObjectUnknown, AudioObjectHasProperty(device, &volumeAddress) {
             var v = Float32(0)
             var size = UInt32(MemoryLayout<Float32>.size)
-            if AudioObjectGetPropertyData(device, &volumeAddress, 0, nil, &size, &v) == noErr { volume = v }
+            if AudioObjectGetPropertyData(
+                device,
+                &volumeAddress,
+                0,
+                nil,
+                &size,
+                &v
+            ) == noErr { volume = v }
+
             if AudioObjectHasProperty(device, &muteAddress) {
                 var m = UInt32(0)
                 size = UInt32(MemoryLayout<UInt32>.size)
-                if AudioObjectGetPropertyData(device, &muteAddress, 0, nil, &size, &m) == noErr { muted = m != 0 }
+                if AudioObjectGetPropertyData(
+                    device,
+                    &muteAddress,
+                    0,
+                    nil,
+                    &size,
+                    &m
+                ) == noErr { muted = m != 0 }
             }
         }
+
         publish { $0.volume = volumeItem(volume: volume, muted: muted) }
     }
 

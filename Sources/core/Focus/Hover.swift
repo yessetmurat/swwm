@@ -11,8 +11,14 @@ import Foundation
 /// window of a workspace just hidden may still be under the cursor), focus
 /// is not in a window swwm does not manage (a system prompt, a sheet, a
 /// launcher panel), and swwm did not move the cursor itself a moment ago.
-public func hoverTakesFocus(_ id: WindowID, focused: WindowID?, shown: Set<WindowID>, focusUnmanaged: Bool,
-                            lastCursorMove: Date, now: Date) -> Bool {
+public func hoverTakesFocus(
+    _ id: WindowID,
+    focused: WindowID?,
+    shown: Set<WindowID>,
+    focusUnmanaged: Bool,
+    lastCursorMove: Date,
+    now: Date
+) -> Bool {
     id != focused && shown.contains(id) && !focusUnmanaged && now.timeIntervalSince(lastCursorMove) > 0.2
 }
 

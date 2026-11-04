@@ -12,6 +12,7 @@ import Testing
     let t = FocusTicket()
     let a = t.next()
     let b = t.next()
+
     #expect(a != b)
     #expect(t.current == b)  // a focus sent with `a` is stale by the time it runs
 }
@@ -23,6 +24,7 @@ import Testing
     let mine = t.next()
     var ran: [Int] = []
     t.run(mine, [{ ran.append(1); _ = t.next() }, { ran.append(2) }, { ran.append(3) }])
+
     #expect(ran == [1])
 }
 
@@ -30,5 +32,6 @@ import Testing
     let t = FocusTicket()
     var ran: [Int] = []
     t.run(t.next(), [{ ran.append(1) }, { ran.append(2) }])
+
     #expect(ran == [1, 2])
 }

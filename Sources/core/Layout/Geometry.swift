@@ -21,6 +21,10 @@ public func tabSibling(of frame: CGRect, among candidates: [WindowID: CGRect]) -
     func area(_ r: CGRect) -> CGFloat { r.isNull ? 0 : r.width * r.height }
     let best = candidates.map { (id: $0.key, overlap: area($0.value.intersection(frame)), other: $0.value) }
         .max { ($0.overlap, $1.id) < ($1.overlap, $0.id) }
-    guard let best, best.overlap > 0, best.overlap >= min(area(frame), area(best.other)) / 2 else { return nil }
+
+    guard let best, best.overlap > 0, best.overlap >= min(area(frame), area(best.other)) / 2 else {
+        return nil
+    }
+
     return best.id
 }

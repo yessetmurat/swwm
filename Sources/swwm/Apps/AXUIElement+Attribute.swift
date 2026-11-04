@@ -17,7 +17,9 @@ extension AXUIElement {
 
     func attribute<T>(_ name: String) -> T? {
         var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(self, name as CFString, &value) == .success else { return nil }
+        guard AXUIElementCopyAttributeValue(self, name as CFString, &value) == .success else {
+            return nil
+        }
         return value as? T
     }
 }

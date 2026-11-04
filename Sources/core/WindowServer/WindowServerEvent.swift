@@ -21,14 +21,32 @@ public enum WindowServerEvent: Equatable, Sendable {
     /// window id alone.
     public init?(type: UInt32, data: [UInt8]) {
         func u32(at i: Int) -> UInt32? {
-            guard data.count >= i + 4 else { return nil }
+            guard data.count >= i + 4 else {
+                return nil
+            }
             return data[i..<i + 4].reversed().reduce(0) { $0 << 8 | UInt32($1) }
         }
         switch type {
-        case 1325: guard let id = u32(at: 8) else { return nil }; self = .added(id)
-        case 1326: guard let id = u32(at: 8) else { return nil }; self = .removed(id)
-        case 806: guard let id = u32(at: 0) else { return nil }; self = .moved(id)
-        case 807: guard let id = u32(at: 0) else { return nil }; self = .resized(id)
+        case 1325:
+            guard let id = u32(at: 8) else {
+                return nil
+            }
+            self = .added(id)
+        case 1326:
+            guard let id = u32(at: 8) else {
+                return nil
+            }
+            self = .removed(id)
+        case 806:
+            guard let id = u32(at: 0) else {
+                return nil
+            }
+            self = .moved(id)
+        case 807:
+            guard let id = u32(at: 0) else {
+                return nil
+            }
+            self = .resized(id)
         default: return nil
         }
     }

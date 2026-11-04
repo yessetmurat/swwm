@@ -32,9 +32,24 @@ enum DockModuleInstaller {
         // user-writable directory.
         run("/bin/rm", "-rf", supportDir)
         run("/bin/mkdir", "-p", supportDir)
-        run("/bin/cp", loader, payload, supportDir)
-        run("/usr/sbin/chown", "-R", "root:wheel", supportDir)
-        run("/bin/chmod", "-R", "755", supportDir)
+        run(
+            "/bin/cp",
+            loader,
+            payload,
+            supportDir
+        )
+        run(
+            "/usr/sbin/chown",
+            "-R",
+            "root:wheel",
+            supportDir
+        )
+        run(
+            "/bin/chmod",
+            "-R",
+            "755",
+            supportDir
+        )
 
         let installedLoader = supportDir + "/loader"
         let installedPayload = supportDir + "/payload"
@@ -43,9 +58,15 @@ enum DockModuleInstaller {
         run("/bin/chmod", "644", plistPath)
 
         _ = runStatus("/bin/launchctl", "bootout", "system/\(label)")  // ignore "not loaded"
-        if runStatus("/bin/launchctl", "bootstrap", "system", plistPath) != 0 {
+        if runStatus(
+            "/bin/launchctl",
+            "bootstrap",
+            "system",
+            plistPath
+        ) != 0 {
             die("launchctl bootstrap failed", 1)
         }
+
         print("Dock module installed. It loads into Dock at boot and after each Dock restart (killall Dock to load it now).")
         exit(0)
     }
@@ -55,6 +76,7 @@ enum DockModuleInstaller {
         _ = runStatus("/bin/launchctl", "bootout", "system/\(label)")
         run("/bin/rm", "-f", plistPath)
         run("/bin/rm", "-rf", supportDir)
+
         print("Dock module removed. Dock keeps the payload until it restarts (killall Dock to unload now).")
         exit(0)
     }
@@ -74,6 +96,7 @@ enum DockModuleInstaller {
         if !output("/usr/sbin/nvram", "boot-args").contains("-arm64e_preview_abi") {
             missing.append("the -arm64e_preview_abi boot-arg")
         }
+
         guard missing.isEmpty else {
             die("""
                 the Dock module needs \(missing.joined(separator: ", ")) to be set.
@@ -86,7 +109,10 @@ enum DockModuleInstaller {
 
     private static func sourceDir() -> String {
         // Not argv[0]: run from PATH it is a bare `swwm`, not a path.
-        guard let exe = Bundle.main.executableURL?.resolvingSymlinksInPath() else { die("cannot find the swwm binary", 1) }
+        guard let exe = Bundle.main.executableURL?.resolvingSymlinksInPath() else {
+            die("cannot find the swwm binary", 1)
+        }
+
         return exe.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("share/swwm/osax").path
     }
 
@@ -124,6 +150,7 @@ enum DockModuleInstaller {
         p.arguments = args
         try? p.run()
         p.waitUntilExit()
+
         return p.terminationStatus
     }
 
@@ -133,6 +160,7 @@ enum DockModuleInstaller {
         p.arguments = args
         try? p.run()
         p.waitUntilExit()
+
         if p.terminationStatus != 0 { die("\(path) \(args.joined(separator: " ")) failed", 1) }
     }
 
@@ -143,8 +171,10 @@ enum DockModuleInstaller {
         let pipe = Pipe()
         p.standardOutput = pipe
         p.standardError = pipe
+
         try? p.run()
         p.waitUntilExit()
+
         return String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
     }
 

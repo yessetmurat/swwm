@@ -16,7 +16,10 @@ extension NSRunningApplication {
     /// agents (the Touch ID and password prompts of coreautha and
     /// SecurityAgent, Notification Center), not background agents, not swwm.
     var isManageable: Bool {
-        guard processIdentifier != getpid() else { return false }
+        guard processIdentifier != getpid() else {
+            return false
+        }
+
         switch activationPolicy {
         case .regular: return true
         case .accessory: return bundleURL.map { !$0.path.hasPrefix("/System/") } ?? false

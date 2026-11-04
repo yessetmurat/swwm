@@ -16,7 +16,14 @@ final class BarItem: NSView {
 
     /// Only a `truncates` item gives up width when the bar is short (the app
     /// name); every other label keeps its full size.
-    init(text: String, symbol: String?, font: NSFont, color: NSColor, background: NSColor, truncates: Bool = false) {
+    init(
+        text: String,
+        symbol: String?,
+        font: NSFont,
+        color: NSColor,
+        background: NSColor,
+        truncates: Bool = false
+    ) {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = 6
@@ -36,10 +43,12 @@ final class BarItem: NSView {
             icon.contentTintColor = color
             views.insert(icon, at: 0)
         }
+
         let row = NSStackView(views: views)
         row.spacing = 8
         row.translatesAutoresizingMaskIntoConstraints = false
         addSubview(row)
+
         NSLayoutConstraint.activate([
             heightAnchor.constraint(equalToConstant: 28),
             row.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),

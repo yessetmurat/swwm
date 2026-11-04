@@ -26,13 +26,20 @@ public struct SavedWorkspaces: Codable, Equatable, Sendable {
 
     public init(world: World, pids: [WindowID: Int32]) {
         entries = pids.compactMap { id, pid in
-            world.workspace(containing: id).map { Entry(window: id, pid: pid, workspace: $0.name, floating: $0.floating[id] != nil) }
+            world.workspace(containing: id).map { Entry(
+                window: id,
+                pid: pid,
+                workspace: $0.name,
+                floating: $0.floating[id] != nil
+            ) }
         }.sorted { $0.window < $1.window }
+
         var trees: [String: DwindleTree.Shape] = [:]
         for name in Set(entries.map(\.workspace)) {
             trees[name] = world.workspace(named: name)?.tree.shape
         }
         self.trees = trees
+
         active = world.monitors.compactMap { world.activeWorkspace(on: $0.id) }
     }
 
@@ -53,12 +60,17 @@ public struct SavedWorkspaces: Codable, Equatable, Sendable {
     public func merging(_ old: SavedWorkspaces, pending: Set<Int32>, untouched: Set<String>) -> SavedWorkspaces {
         var merged = self
         let have = Set(entries.map(\.window))
+
         merged.entries += old.entries.filter { pending.contains($0.pid) && !have.contains($0.window) }
         merged.entries.sort { $0.window < $1.window }
+
         for name in untouched {
-            guard let shape = old.trees?[name] else { continue }
+            guard let shape = old.trees?[name] else {
+                continue
+            }
             merged.trees = (merged.trees ?? [:]).merging([name: shape]) { _, old in old }
         }
+
         return merged
     }
 

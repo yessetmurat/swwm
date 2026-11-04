@@ -11,6 +11,7 @@ import Testing
 
 @Test func neighbors() {
     let f = tree3().frames(in: R, gap: 0)
+
     #expect(neighbor(of: 1, .right, in: f) == 2)  // 2 and 3 tie on overlap; 2's top is closer
     #expect(neighbor(of: 3, .up, in: f) == 2)
     #expect(neighbor(of: 2, .down, in: f) == 3)
@@ -22,6 +23,7 @@ import Testing
 
 @Test func neighborWithGap() {
     let f = tree3().frames(in: R, gap: 8)
+
     #expect(neighbor(of: 1, .right, in: f) == 2)
     #expect(neighbor(of: 3, .up, in: f) == 2)
 }
@@ -32,5 +34,6 @@ import Testing
         2: CGRect(x: 300, y: 0, width: 100, height: 100),
         3: CGRect(x: 150, y: 50, width: 100, height: 100),
     ]
+
     #expect(neighbor(of: 1, .right, in: f) == 3)
 }

@@ -30,8 +30,10 @@ enum Client {
             print(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev")
             exit(0)
         }
+
         let request: Request
         do { request = try Request.parse(args) } catch { fail("swwm: \(error.message)\n\(usage)", 64) }
+
         switch send(request.line, timeout: 2) {
         case .notRunning: fail("swwm is not running", 2)
         case .noAnswer: fail("swwm did not answer", 2)
@@ -47,6 +49,7 @@ enum Client {
         let fd = Socket.make()
         defer { close(fd) }
         var addr = Socket.address()
+
         return withUnsafePointer(to: &addr) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
         } == 0
@@ -59,15 +62,22 @@ enum Client {
     private static func send(_ line: String, timeout: Double) -> Outcome {
         let fd = Socket.make()
         defer { close(fd) }
+
         var addr = Socket.address()
         let connected = withUnsafePointer(to: &addr) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
         }
-        guard connected == 0 else { return .notRunning }
+        guard connected == 0 else {
+            return .notRunning
+        }
+
         Socket.setTimeout(fd, seconds: timeout)
         Socket.write(fd, line + "\n")
         shutdown(fd, SHUT_WR)
-        guard let text = Socket.read(fd), !text.isEmpty else { return .noAnswer }
+
+        guard let text = Socket.read(fd), !text.isEmpty else {
+            return .noAnswer
+        }
         return .reply(Reply.parse(wire: text))
     }
 

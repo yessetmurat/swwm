@@ -26,11 +26,21 @@ public struct Frame: Codable, Equatable, Sendable {
 
     public var x, y, width, height: Double
 
-    public init(x: Double, y: Double, width: Double, height: Double) {
+    public init(
+        x: Double,
+        y: Double,
+        width: Double,
+        height: Double
+    ) {
         (self.x, self.y, self.width, self.height) = (x, y, width, height)
     }
 
-    init(_ r: CGRect) { self.init(x: r.minX, y: r.minY, width: r.width, height: r.height) }
+    init(_ r: CGRect) { self.init(
+        x: r.minX,
+        y: r.minY,
+        width: r.width,
+        height: r.height
+    ) }
 }
 
 public struct WindowSnapshot: Codable, Equatable, Sendable {
@@ -73,10 +83,21 @@ extension World {
     public func windowSnapshots(focused: WindowID?, info: (WindowID) -> WindowInfo?) -> [WindowSnapshot] {
         workspaceSnapshots().flatMap { ws in
             ws.windows.compactMap { id -> WindowSnapshot? in
-                guard let i = info(id), let w = workspace(named: ws.name) else { return nil }
-                return WindowSnapshot(id: id, app: i.app, title: i.title, workspace: ws.name, monitor: ws.monitor,
-                                      floating: w.floating[id] != nil, zoomed: w.zoomed == id, visible: ws.active,
-                                      focused: id == focused, frame: Frame(i.frame))
+                guard let i = info(id), let w = workspace(named: ws.name) else {
+                    return nil
+                }
+                return WindowSnapshot(
+                    id: id,
+                    app: i.app,
+                    title: i.title,
+                    workspace: ws.name,
+                    monitor: ws.monitor,
+                    floating: w.floating[id] != nil,
+                    zoomed: w.zoomed == id,
+                    visible: ws.active,
+                    focused: id == focused,
+                    frame: Frame(i.frame)
+                )
             }
         }
     }
@@ -85,7 +106,12 @@ extension World {
         monitors.flatMap { m in
             workspaces(on: m.id).compactMap { name in
                 workspace(named: name).map {
-                    WorkspaceSnapshot(name: name, monitor: m.id, active: activeWorkspace(on: m.id) == name, windows: $0.windows)
+                    WorkspaceSnapshot(
+                        name: name,
+                        monitor: m.id,
+                        active: activeWorkspace(on: m.id) == name,
+                        windows: $0.windows
+                    )
                 }
             }
         }
@@ -93,8 +119,15 @@ extension World {
 
     public func monitorSnapshots(focusedMonitor: MonitorID?) -> [MonitorSnapshot] {
         monitors.map { m in
-            MonitorSnapshot(id: m.id, name: m.name, builtin: m.isBuiltin, frame: Frame(m.frame),
-                            workspaces: workspaces(on: m.id), active: activeWorkspace(on: m.id), focused: m.id == focusedMonitor)
+            MonitorSnapshot(
+                id: m.id,
+                name: m.name,
+                builtin: m.isBuiltin,
+                frame: Frame(m.frame),
+                workspaces: workspaces(on: m.id),
+                active: activeWorkspace(on: m.id),
+                focused: m.id == focusedMonitor
+            )
         }
     }
 }
@@ -103,5 +136,6 @@ extension World {
 public func json<T: Encodable>(_ value: T) -> String {
     let e = JSONEncoder()
     e.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+
     return (try? e.encode(value)).map { String(decoding: $0, as: UTF8.self) } ?? "null"
 }

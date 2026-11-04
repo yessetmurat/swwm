@@ -32,8 +32,10 @@ extension World {
         let list = workspaces(on: m).map {
             BarState.Workspace(name: $0, label: $0.uppercased(), active: $0 == active)
         }
+
         let ws = active.flatMap(workspace(named:))
         let shown = focused.flatMap { f in ws?.windows.contains(f) == true ? f : nil } ?? ws?.mru.first
+
         return BarState(workspaces: list, app: shown.flatMap(appName) ?? "Finder")
     }
 }
@@ -41,8 +43,19 @@ extension World {
 /// The bar steps aside for the auto-hidden macOS menu bar: it hides when the
 /// cursor touches the display's top edge (where macOS reveals the menu) and
 /// comes back once the cursor leaves the bar's area.
-public func barHidden(cursor p: CGPoint, display f: CGRect, barHeight: CGFloat, hidden: Bool) -> Bool {
-    guard p.x >= f.minX, p.x < f.maxX, p.y >= f.minY, p.y < f.maxY else { return false }
+public func barHidden(
+    cursor p: CGPoint,
+    display f: CGRect,
+    barHeight: CGFloat,
+    hidden: Bool
+) -> Bool {
+    guard p.x >= f.minX,
+          p.x < f.maxX,
+          p.y >= f.minY,
+          p.y < f.maxY else {
+        return false
+    }
+
     if p.y <= f.minY + 1 { return true }
     return hidden && p.y < f.minY + barHeight
 }

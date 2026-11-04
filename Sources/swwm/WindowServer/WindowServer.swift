@@ -13,8 +13,18 @@ import SwwmCore
 /// knows of a window as soon as it is on screen, before its app reports it.
 enum WindowServer {
 
-    private typealias Callback = @convention(c) (UInt32, UnsafeMutableRawPointer?, Int, UnsafeMutableRawPointer?) -> Void
-    private typealias Register = @convention(c) (Int32, Callback, UInt32, UnsafeMutableRawPointer?) -> Int32
+    private typealias Callback = @convention(c) (
+        UInt32,
+        UnsafeMutableRawPointer?,
+        Int,
+        UnsafeMutableRawPointer?
+    ) -> Void
+    private typealias Register = @convention(c) (
+        Int32,
+        Callback,
+        UInt32,
+        UnsafeMutableRawPointer?
+    ) -> Int32
     private typealias Request = @convention(c) (Int32, UnsafeMutablePointer<UInt32>?, Int32) -> Int32
 
     nonisolated(unsafe) private static var handler: (WindowServerEvent) -> Void = { _ in }
@@ -29,12 +39,35 @@ enum WindowServer {
     /// that let the mouse through (the screenshot thumbnail's full-screen
     /// window) do not count, as they do not for the mouse.
     static func windowAt(_ p: CGPoint) -> WindowID? {
-        typealias Find = @convention(c) (Int32, Int32, Int32, Int32, UnsafeMutablePointer<CGPoint>,
-                                         UnsafeMutablePointer<CGPoint>, UnsafeMutablePointer<UInt32>, UnsafeMutablePointer<Int32>) -> Int32
-        guard let find = SkyLight.symbol("SLSFindWindowAndOwner", as: Find.self) else { return nil }
+        typealias Find = @convention(c) (
+            Int32,
+            Int32,
+            Int32,
+            Int32,
+            UnsafeMutablePointer<CGPoint>,
+            UnsafeMutablePointer<CGPoint>,
+            UnsafeMutablePointer<UInt32>,
+            UnsafeMutablePointer<Int32>
+        ) -> Int32
+        guard let find = SkyLight.symbol("SLSFindWindowAndOwner", as: Find.self) else {
+            return nil
+        }
+
         var point = p, local = CGPoint.zero
         var id: UInt32 = 0, owner: Int32 = 0
-        guard find(SkyLight.connection, 0, 1, 0, &point, &local, &id, &owner) == 0, id != 0 else { return nil }
+
+        guard find(
+            SkyLight.connection,
+            0,
+            1,
+            0,
+            &point,
+            &local,
+            &id,
+            &owner
+        ) == 0, id != 0 else {
+            return nil
+        }
         return id
     }
 
@@ -47,18 +80,29 @@ enum WindowServer {
     /// Events arrive through the main run loop.
     static func start(_ handler: @escaping (WindowServerEvent) -> Void) {
         self.handler = handler
-        guard let register = SkyLight.symbol("SLSRegisterConnectionNotifyProc", as: Register.self) else { return }
+        guard let register = SkyLight.symbol("SLSRegisterConnectionNotifyProc", as: Register.self) else {
+            return
+        }
+
         let callback: Callback = { type, data, length, _ in
             let bytes = data.map { Array(UnsafeRawBufferPointer(start: $0, count: length)) } ?? []
             if let e = WindowServerEvent(type: type, data: bytes) { WindowServer.handler(e) }
         }
-        for type in WindowServerEvent.types { _ = register(SkyLight.connection, callback, type, nil) }
+
+        for type in WindowServerEvent.types { _ = register(
+            SkyLight.connection,
+            callback,
+            type,
+            nil
+        ) }
     }
 
     /// Moved and resized events come only for windows asked for here; pass
     /// every window to watch each time.
     static func watch(_ ids: [WindowID]) {
-        guard let request = SkyLight.symbol("SLSRequestNotificationsForWindows", as: Request.self) else { return }
+        guard let request = SkyLight.symbol("SLSRequestNotificationsForWindows", as: Request.self) else {
+            return
+        }
         var ids = ids
         _ = request(SkyLight.connection, &ids, Int32(ids.count))
     }
@@ -67,11 +111,18 @@ enum WindowServer {
         (info as? [[String: Any]] ?? []).compactMap { i in
             guard let id = i[kCGWindowNumber as String] as? Int,
                   let dict = i[kCGWindowBounds as String] as? NSDictionary,
-                  let bounds = CGRect(dictionaryRepresentation: dict) else { return nil }
-            return ServerWindow(id: WindowID(id), pid: i[kCGWindowOwnerPID as String] as? Int32 ?? 0,
-                                layer: i[kCGWindowLayer as String] as? Int ?? 0, bounds: bounds,
-                                alpha: i[kCGWindowAlpha as String] as? Double ?? 1,
-                                owner: i[kCGWindowOwnerName as String] as? String ?? "")
+                  let bounds = CGRect(dictionaryRepresentation: dict) else {
+                return nil
+            }
+
+            return ServerWindow(
+                id: WindowID(id),
+                pid: i[kCGWindowOwnerPID as String] as? Int32 ?? 0,
+                layer: i[kCGWindowLayer as String] as? Int ?? 0,
+                bounds: bounds,
+                alpha: i[kCGWindowAlpha as String] as? Double ?? 1,
+                owner: i[kCGWindowOwnerName as String] as? String ?? ""
+            )
         }
     }
 }

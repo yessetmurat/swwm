@@ -11,8 +11,18 @@ import Testing
 
 private let size = CGSize(width: 2040, height: 1273)
 // The external display sits higher and ends 51pt above the laptop's bottom.
-private let laptop = MonitorInfo(id: 1, name: "L", isBuiltin: true, frame: CGRect(x: 0, y: 0, width: 2056, height: 1329))
-private let external = MonitorInfo(id: 2, name: "X", isBuiltin: false, frame: CGRect(x: 2056, y: -162, width: 2560, height: 1440))
+private let laptop = MonitorInfo(
+    id: 1,
+    name: "L",
+    isBuiltin: true,
+    frame: CGRect(x: 0, y: 0, width: 2056, height: 1329)
+)
+private let external = MonitorInfo(
+    id: 2,
+    name: "X",
+    isBuiltin: false,
+    frame: CGRect(x: 2056, y: -162, width: 2560, height: 1440)
+)
 
 @Test func hidesAwayFromNeighborOnTheRight() {
     // macOS keeps ~66pt of a window above the display bottom, so a window

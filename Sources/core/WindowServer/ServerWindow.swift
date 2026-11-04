@@ -17,7 +17,14 @@ public struct ServerWindow: Equatable, Sendable {
     public let alpha: Double
     public let owner: String
 
-    public init(id: WindowID, pid: Int32, layer: Int, bounds: CGRect, alpha: Double, owner: String) {
+    public init(
+        id: WindowID,
+        pid: Int32,
+        layer: Int,
+        bounds: CGRect,
+        alpha: Double,
+        owner: String
+    ) {
         self.id = id
         self.pid = pid
         self.layer = layer

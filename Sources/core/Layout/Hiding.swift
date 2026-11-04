@@ -18,13 +18,20 @@ public func hiddenOrigin(for size: CGSize, on m: MonitorInfo, others: [MonitorIn
         CGPoint(x: f.maxX - 1, y: f.maxY - 1),               // bottom-right
         CGPoint(x: f.minX - size.width + 1, y: f.maxY - 1),  // bottom-left
     ]
+
     func spill(_ p: CGPoint) -> CGFloat {
-        let band = CGRect(x: p.x, y: f.minY, width: size.width, height: f.height)
+        let band = CGRect(
+            x: p.x,
+            y: f.minY,
+            width: size.width,
+            height: f.height
+        )
         return others.reduce(0) { sum, o in
             let i = band.intersection(o.frame)
             return sum + (i.isNull ? 0 : i.width * i.height)
         }
     }
+
     return candidates.min { spill($0) < spill($1) }!
 }
 
@@ -34,5 +41,10 @@ public func hiddenOrigin(for size: CGSize, on m: MonitorInfo, others: [MonitorIn
 public func shownFloatingFrame(_ r: CGRect, on m: MonitorInfo, area: CGRect) -> CGRect {
     let i = r.intersection(m.frame)
     if !i.isNull, i.width * i.height >= r.width * r.height / 2 { return r }
-    return CGRect(x: area.midX - r.width / 2, y: area.midY - r.height / 2, width: r.width, height: r.height)
+    return CGRect(
+        x: area.midX - r.width / 2,
+        y: area.midY - r.height / 2,
+        width: r.width,
+        height: r.height
+    )
 }

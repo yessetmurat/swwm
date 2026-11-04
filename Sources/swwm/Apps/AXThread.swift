@@ -20,7 +20,12 @@ final class AXThread {
         let thread = Thread { [self] in
             runLoop = CFRunLoopGetCurrent()
             // A run loop with no source returns at once: keep a port in it.
-            let keep = CFMachPortCreate(nil, { _, _, _, _ in }, nil, nil)
+            let keep = CFMachPortCreate(
+                nil,
+                { _, _, _, _ in },
+                nil,
+                nil
+            )
             CFRunLoopAddSource(runLoop, CFMachPortCreateRunLoopSource(nil, keep, 0), .commonModes)
             ready.signal()
             CFRunLoopRun()

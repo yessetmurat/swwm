@@ -16,14 +16,25 @@ import SwwmCore
 extension Manager {
 
     func applyLevel(_ id: WindowID) {
-        guard let pid = windows[id]?.pid else { return }
+        guard let pid = windows[id]?.pid else {
+            return
+        }
+
         let floating = world.workspace(containing: id)?.floating[id] != nil
         let changes = levels.set(id, pid: pid, floating: floating)
         send(changes)
+
         // A sheet already open goes up with it.
-        guard floating, !changes.isEmpty else { return }
+        guard floating, !changes.isEmpty else {
+            return
+        }
         for w in WindowServer.onScreen(excludingDesktop: true) where w.pid == pid {
-            send(levels.appeared(w.id, pid: w.pid, layer: w.layer, managed: windows[w.id] != nil))
+            send(levels.appeared(
+                w.id,
+                pid: w.pid,
+                layer: w.layer,
+                managed: windows[w.id] != nil
+            ))
         }
     }
 
@@ -34,8 +45,16 @@ extension Manager {
     func serverEvent(_ e: WindowServerEvent) {
         switch e {
         case .added(let id):
-            guard let w = WindowServer.window(id) else { return }
-            send(levels.appeared(id, pid: w.pid, layer: w.layer, managed: windows[id] != nil))
+            guard let w = WindowServer.window(id) else {
+                return
+            }
+
+            send(levels.appeared(
+                id,
+                pid: w.pid,
+                layer: w.layer,
+                managed: windows[id] != nil
+            ))
         case .removed(let id):
             send(levels.gone(id))
         case .moved(let id):
@@ -50,10 +69,15 @@ extension Manager {
         for c in changes {
             log.debug("level \(c.window, privacy: .public) -> \(c.level, privacy: .public)")
             dock.setLevel(c.window, c.level) { [weak self] reply in
-                guard let self, reply != .done else { return }
+                guard let self, reply != .done else {
+                    return
+                }
+
                 self.levels.failed(c)  // asked again on the next change or Dock restart
                 // Unreachable is the shadow notice's case; turned down means an older payload.
-                guard reply == .rejected, self.dockModuleInstalled, !self.levelNoticeShown else { return }
+                guard reply == .rejected, self.dockModuleInstalled, !self.levelNoticeShown else {
+                    return
+                }
                 self.levelNoticeShown = true
                 self.onLevelUnavailable()
             }

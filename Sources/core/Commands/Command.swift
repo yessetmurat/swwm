@@ -33,11 +33,15 @@ public enum Command: Equatable, Sendable {
         let arg = parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespaces) : ""
 
         func noArg(_ c: Command) throws(CommandError) -> Command {
-            guard arg.isEmpty else { throw CommandError("'\(verb)' takes no argument: '\(line)'") }
+            guard arg.isEmpty else {
+                throw CommandError("'\(verb)' takes no argument: '\(line)'")
+            }
             return c
         }
         func name() throws(CommandError) -> String {
-            guard !arg.isEmpty, !arg.contains(" ") else { throw CommandError("'\(verb)' needs one name: '\(line)'") }
+            guard !arg.isEmpty, !arg.contains(" ") else {
+                throw CommandError("'\(verb)' needs one name: '\(line)'")
+            }
             return arg
         }
         func direction(horizontalOnly: Bool = false) throws(CommandError) -> Direction {
@@ -61,10 +65,14 @@ public enum Command: Equatable, Sendable {
         case "toggle-zoom": return try noArg(.toggleZoom)
         case "balance": return try noArg(.balance)
         case "mirror":
-            guard let a = Axis(rawValue: arg) else { throw CommandError("bad axis in '\(line)'") }
+            guard let a = Axis(rawValue: arg) else {
+                throw CommandError("bad axis in '\(line)'")
+            }
             return .mirror(a)
         case "exec":
-            guard !arg.isEmpty else { throw CommandError("'exec' needs a command") }
+            guard !arg.isEmpty else {
+                throw CommandError("'exec' needs a command")
+            }
             return .exec(arg)
         case "reload": return try noArg(.reload)
         case "quit": return try noArg(.quit)

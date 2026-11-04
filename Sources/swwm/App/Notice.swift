@@ -18,6 +18,7 @@ enum Notice {
         a.addButton(withTitle: "OK")
         a.buttons[0].target = a.window
         a.buttons[0].action = #selector(NSWindow.orderOut(_:))
+
         a.layout()
         a.window.level = .floating
         a.window.center()

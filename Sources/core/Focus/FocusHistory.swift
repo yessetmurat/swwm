@@ -31,7 +31,9 @@ public struct FocusHistory {
 
     public func wasRecentlyFocused(_ id: WindowID, now: Date) -> Bool {
         if current == id { return true }
-        guard let p = previous, p.id == id else { return false }
+        guard let p = previous, p.id == id else {
+            return false
+        }
         return now.timeIntervalSince(p.until) <= Self.grace
     }
 

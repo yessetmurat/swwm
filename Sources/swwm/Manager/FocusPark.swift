@@ -18,8 +18,12 @@ final class FocusPark {
     }
 
     private let panel: Panel = {
-        let p = Panel(contentRect: NSRect(x: 0, y: 0, width: 1, height: 1),
-                      styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        let p = Panel(
+            contentRect: NSRect(x: 0, y: 0, width: 1, height: 1),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
         p.alphaValue = 0
         p.hasShadow = false
         p.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
@@ -36,6 +40,7 @@ final class FocusPark {
     /// itself.
     func park(on m: MonitorInfo, desktopPoint p: CGPoint?) {
         monitor = m.id
+
         // An empty workspace is the desktop, Finder's, as the bar shows it:
         // click it, as the user would, so Finder is frontmost with the desktop
         // focused, not one of its windows, and the menu bar is Finder's. AX
@@ -44,7 +49,12 @@ final class FocusPark {
         if let p {
             panel.orderOut(nil)
             for type in [CGEventType.leftMouseDown, .leftMouseUp] {
-                let e = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: p, mouseButton: .left)
+                let e = CGEvent(
+                    mouseEventSource: nil,
+                    mouseType: type,
+                    mouseCursorPosition: p,
+                    mouseButton: .left
+                )
                 // No modifiers: the user may still hold the hotkey's alt, and an
                 // option-click on the desktop hides the app that was active.
                 e?.flags = []
@@ -53,8 +63,10 @@ final class FocusPark {
             }
             return
         }
+
         let r = Displays.appKitRect(m.frame)
         panel.setFrameOrigin(NSPoint(x: r.midX, y: r.midY))
+
         // NSApp.activate() is cooperative and leaves the other app frontmost;
         // AXFrontmost makes the switch for real.
         let me = AXUIElementCreateApplication(ProcessInfo.processInfo.processIdentifier)

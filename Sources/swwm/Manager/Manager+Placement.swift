@@ -21,16 +21,23 @@ extension Manager {
 
     func windowCreated(_ new: AppWindow) {
         let id = new.id
+
         // New windows open on the display under the cursor.
         let returning = remembered.contains(id)  // unminimized or unhidden: keeps its place
-        guard track(new, adopting: false), let w = windows[id], let ws = world.workspace(containing: id),
-              let m = world.monitor(of: ws.name) else { return }
+
+        guard track(new, adopting: false),
+              let w = windows[id],
+              let ws = world.workspace(containing: id),
+              let m = world.monitor(of: ws.name) else {
+            return
+        }
+
         if !returning, ws.tree.contains(id), world.isVisible(id) {
             switch tilesByKind[w.kind] {
             case true?: settle(id, on: m)
             case false?:
                 opened[id] = nil
-                makeFloating(id, frame: w.frame)
+                makeFloating(id, frame: w.frame, because: "its kind floats")
             case nil: place(id, attempt: 0)
             }
         } else {
@@ -44,21 +51,43 @@ extension Manager {
     /// asked again; after that it tiles, and the size check floats it if it
     /// still refuses.
     private func place(_ id: WindowID, attempt: Int) {
-        guard let w = windows[id], let c = connections?.connection(w.pid) else { return }
-        c.probeAxes(id) { [weak self] width, height in self?.placed(id, attempt: attempt, width: width, height: height) }
+        guard let w = windows[id], let c = connections?.connection(w.pid) else {
+            return
+        }
+
+        c.probeAxes(id) { [weak self] width, height in self?.placed(
+            id,
+            attempt: attempt,
+            width: width,
+            height: height
+        ) }
     }
 
-    private func placed(_ id: WindowID, attempt: Int, width: Bool, height: Bool) {
-        guard let w = windows[id], let ws = world.workspace(containing: id), ws.tree.contains(id),
-              let m = world.monitor(of: ws.name), world.isVisible(id) else {
+    private func placed(
+        _ id: WindowID,
+        attempt: Int,
+        width: Bool,
+        height: Bool
+    ) {
+        guard let w = windows[id],
+              let ws = world.workspace(containing: id),
+              ws.tree.contains(id),
+              let m = world.monitor(of: ws.name),
+              world.isVisible(id) else {
             opened[id] = nil  // floated, moved or gone meanwhile: no size check follows
             return
         }
-        switch probeStep(width: width, height: height, attempt: attempt, waits: Self.sizeProbeWaits) {
+
+        switch probeStep(
+            width: width,
+            height: height,
+            attempt: attempt,
+            waits: Self.sizeProbeWaits
+        ) {
         case .float:
             tilesByKind[w.kind] = false
             opened[id] = nil
-            makeFloating(id, frame: w.frame)
+            makeFloating(id, frame: w.frame, because: "it stretches one way only")
         case .askAgain(let wait):
             DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [weak self] in self?.place(id, attempt: attempt + 1) }
         case .tile(let learned):
@@ -71,6 +100,7 @@ extension Manager {
     /// size check, a size the app sets itself is put back (`windowResized`).
     private func settle(_ id: WindowID, on m: MonitorID) {
         if world.isVisible(id), let r = world.shownFrame(of: id) { setFrame(id, r) }
+
         settling.insert(id)
         layout(m)
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.refusalCheck) { [weak self] in self?.floatIfRefused(id) }
@@ -79,8 +109,14 @@ extension Manager {
     /// A settling window whose app gave it another size (its frame just
     /// reported) gets its tile again. Not while the user drags.
     func windowResized(_ id: WindowID) {
-        guard settling.contains(id), !CGEventSource.buttonState(.combinedSessionState, button: .left),
-              world.isVisible(id), let w = windows[id], let r = world.shownFrame(of: id), !near(w.frame, r) else { return }
+        guard settling.contains(id),
+              !CGEventSource.buttonState(.combinedSessionState, button: .left),
+              world.isVisible(id),
+              let w = windows[id],
+              let r = world.shownFrame(of: id),
+              !near(w.frame, r) else {
+            return
+        }
         setFrame(id, r)
     }
 
@@ -91,22 +127,37 @@ extension Manager {
     func floatIfRefused(_ id: WindowID) {
         settling.remove(id)
         let start = opened.removeValue(forKey: id)
+
         readFrame(id) { [weak self] now in
-            guard let self, let now, self.world.isVisible(id), let ws = self.world.workspace(containing: id),
-                  ws.zoomed != id, ws.tree.contains(id), let r = self.world.shownFrame(of: id),
-                  !near(CGRect(origin: .zero, size: now.size), CGRect(origin: .zero, size: r.size), tolerance: 20)
-            else { return }
-            self.makeFloating(id, frame: start ?? now)
+            guard let self,
+                  let now,
+                  self.world.isVisible(id),
+                  let ws = self.world.workspace(containing: id),
+                  ws.zoomed != id,
+                  ws.tree.contains(id),
+                  let r = self.world.shownFrame(of: id),
+                  !near(CGRect(origin: .zero, size: now.size), CGRect(origin: .zero, size: r.size), tolerance: 20) else {
+                return
+            }
+
+            self.makeFloating(id, frame: start ?? now, because: "it kept \(now.size), not its tile's \(r.size)")
         }
     }
 
     /// Floats a tiled window at `frame`: where the app opened it, as a tile
     /// may have stretched it the one way it can. Off the work area: centered.
-    private func makeFloating(_ id: WindowID, frame f: CGRect) {
-        guard let w = windows[id], let ws = world.workspace(containing: id), let m = world.monitor(of: ws.name),
-              let info = world.monitorInfo(m) else { return }
-        log.debug("float \(id, privacy: .public) \(w.app, privacy: .public)")
+    private func makeFloating(_ id: WindowID, frame f: CGRect, because reason: String) {
+        guard let w = windows[id],
+              let ws = world.workspace(containing: id),
+              let m = world.monitor(of: ws.name),
+              let info = world.monitorInfo(m) else {
+            return
+        }
+
+        // Kept in the system log: an automatic float is rare and puzzling afterwards.
+        log.notice("float \(id, privacy: .public) \(w.app, privacy: .public): \(reason, privacy: .public)")
         let frame = shownFloatingFrame(f, on: info, area: world.workArea(of: m))
+
         world.remove(id)
         world.add(id, to: ws.name, floatingFrame: frame)
         setFrame(id, frame)
