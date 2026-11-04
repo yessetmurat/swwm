@@ -9,34 +9,39 @@ import AppKit
 import SwwmCore
 
 /// One session event tap for hotkeys (including cmd-tab), focus follows
-/// mouse, and modifier+drag move/resize.
+/// mouse, and modifier+drag move/resize. It runs on its own thread and
+/// decides from `TapState`, so system input never waits for the main
+/// thread; the work it decides on runs on main.
 final class EventTap {
 
     private struct Drag {
 
         let window: WindowID
         let resize: Bool
+        let floating: Bool
         let start: CGPoint
         let frame: CGRect
     }
 
     private let manager: Manager
-    private var bindings: [KeyCombo: Command] = [:]
-    private var settings = Settings()
+    let state = TapStateBox()
     private var port: CFMachPort?
+    // Tap thread only.
     private var drag: Drag?
     private var press: (window: WindowID, frame: CGRect, point: CGPoint, clicks: Int)?  // plain left press on a managed window
     private var lastHover = Date.distantPast
     var onMouseMoved: (CGPoint) -> Void = { _ in }
-    private var pendingDragPoint: CGPoint?  // coalesced: only the latest drag position is applied
 
     init(manager: Manager) {
         self.manager = manager
     }
 
     func update(config: Config) {
-        bindings = config.bindings
-        settings = config.settings
+        let bindings = config.bindings, settings = config.settings
+        state.update {
+            $0.bindings = bindings
+            $0.settings = settings
+        }
     }
 
     func start() {
@@ -50,68 +55,73 @@ final class EventTap {
             NSLog("swwm: cannot create the event tap; is Accessibility granted?")
             return
         }
-        CFRunLoopAddSource(CFRunLoopGetMain(), CFMachPortCreateRunLoopSource(nil, port, 0), .commonModes)
+        let thread = Thread {
+            CFRunLoopAddSource(CFRunLoopGetCurrent(), CFMachPortCreateRunLoopSource(nil, port, 0), .commonModes)
+            CFRunLoopRun()
+        }
+        thread.name = "dev.swwm.tap"
+        thread.qualityOfService = .userInteractive
+        thread.start()
     }
 
-    /// Returns nil to swallow the event.
+    /// Returns nil to swallow the event. Tap thread.
     fileprivate func handle(_ type: CGEventType, _ event: CGEvent) -> CGEvent? {
         if event.getIntegerValueField(.eventSourceUserData) == FocusPark.syntheticMark { return event }
+        let s = state.read()
         switch type {
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
             if let port { CGEvent.tapEnable(tap: port, enable: true) }
             return event
         case .keyDown:
-            manager.noteInput()
+            noteInput()
             let combo = KeyCombo(keyCode: UInt16(event.getIntegerValueField(.keyboardEventKeycode)),
                                  modifiers: modifiers(event.flags))
-            guard let command = bindings[combo] else { return event }
-            // The tap only decides; the work runs after it returns, so a slow
-            // app never holds up system input.
+            guard let command = s.bindings[combo] else { return event }
             DispatchQueue.main.async { [manager] in manager.run(command) }
             return nil
         case .mouseMoved:
             let p = event.location
             DispatchQueue.main.async { [self] in onMouseMoved(p) }
-            hover(p)
+            hover(p, s)
             return event
         case .leftMouseDown, .rightMouseDown:
-            manager.noteInput()
-            guard modifiers(event.flags) == settings.mouseModifier else {
+            noteInput()
+            let p = event.location
+            guard modifiers(event.flags) == s.settings.mouseModifier else {
                 // A plain press may start a title-bar move or an edge resize.
-                let p = event.location
                 let clicks = Int(event.getIntegerValueField(.mouseEventClickState))
-                DispatchQueue.main.async { [self] in
-                    press = type == .leftMouseDown
-                        ? manager.window(at: p).flatMap { id in manager.frame(of: id).map { (id, $0, p, clicks) } }
-                        : nil
-                }
+                press = type == .leftMouseDown ? s.window(at: p).flatMap { id in s.frames[id].map { (id, $0, p, clicks) } } : nil
                 return event
             }
-            guard let id = manager.window(at: event.location), let frame = manager.frame(of: id) else { return event }
-            drag = Drag(window: id, resize: type == .rightMouseDown, start: event.location, frame: frame)
+            guard let id = s.window(at: p), let frame = s.frames[id] else { return event }
+            drag = Drag(window: id, resize: type == .rightMouseDown, floating: s.floating.contains(id), start: p, frame: frame)
             DispatchQueue.main.async { [manager] in manager.focus(id, warp: false) }
             return nil
         case .leftMouseDragged, .rightMouseDragged:
-            guard drag != nil else { return event }
-            if pendingDragPoint == nil {
-                DispatchQueue.main.async { [self] in applyDrag() }
+            guard let d = drag else { return event }
+            // The app connection keeps only the newest of these writes.
+            let p = event.location
+            let dx = p.x - d.start.x, dy = p.y - d.start.y
+            if !d.resize {
+                DispatchQueue.main.async { [manager] in
+                    manager.setPosition(d.window, CGPoint(x: d.frame.minX + dx, y: d.frame.minY + dy))
+                }
+            } else if d.floating {
+                let r = CGRect(x: d.frame.minX, y: d.frame.minY, width: max(100, d.frame.width + dx), height: max(100, d.frame.height + dy))
+                DispatchQueue.main.async { [manager] in manager.setFrame(d.window, r) }
             }
-            pendingDragPoint = event.location
             return nil
         case .leftMouseUp, .rightMouseUp:
             let p = event.location
             guard let d = drag else {
-                if type == .leftMouseUp {
-                    DispatchQueue.main.async { [self] in
-                        if let pr = press { nativeDragEnded(pr.window, from: pr.frame, pressedAt: pr.point, clicks: pr.clicks, at: p) }
-                        press = nil
-                    }
+                if type == .leftMouseUp, let pr = press {
+                    DispatchQueue.main.async { [self] in nativeDragEnded(pr.window, from: pr.frame, pressedAt: pr.point, clicks: pr.clicks, at: p) }
                 }
+                press = nil
                 return event
             }
             drag = nil
-            DispatchQueue.main.async { [self] in
-                pendingDragPoint = nil
+            DispatchQueue.main.async { [manager] in
                 if d.resize {
                     manager.resized(d.window, by: CGSize(width: p.x - d.start.x, height: p.y - d.start.y))
                 } else {
@@ -124,22 +134,16 @@ final class EventTap {
         }
     }
 
-    private func applyDrag() {
-        guard let d = drag, let p = pendingDragPoint else { return }
-        pendingDragPoint = nil
-        let dx = p.x - d.start.x, dy = p.y - d.start.y
-        if !d.resize {
-            manager.setPosition(d.window, CGPoint(x: d.frame.minX + dx, y: d.frame.minY + dy))
-        } else if manager.isFloating(d.window) {
-            manager.setFrame(d.window, CGRect(x: d.frame.minX, y: d.frame.minY,
-                                              width: max(100, d.frame.width + dx), height: max(100, d.frame.height + dy)))
-        }
+    /// A click or key press: focus that follows it is the user's doing.
+    private func noteInput() {
+        let now = Date()
+        DispatchQueue.main.async { [manager] in manager.noteInput(at: now) }
     }
 
     /// The window was moved by its title bar or resized by an edge without
     /// swwm: fold that into the layout instead of leaving it out of place.
     /// The frame comes fresh from the app: its last moved event may still be
-    /// on the way.
+    /// on the way. Main.
     private func nativeDragEnded(_ id: WindowID, from old: CGRect, pressedAt start: CGPoint, clicks: Int, at p: CGPoint) {
         manager.readFrame(id) { [manager] new in
             guard let new else { return }
@@ -161,16 +165,17 @@ final class EventTap {
     }
 
     /// Focus follows mouse with autoraise. Throttled; paused right after
-    /// swwm moved the cursor itself.
-    private func hover(_ p: CGPoint) {
-        guard settings.focusFollowsMouse, drag == nil else { return }
+    /// swwm moved the cursor itself. No lookup while the cursor stays on the
+    /// focused window and off the floating windows above it. Tap thread.
+    private func hover(_ p: CGPoint, _ s: TapState) {
+        guard s.settings.focusFollowsMouse, drag == nil else { return }
         let now = Date()
-        guard now.timeIntervalSince(lastHover) > 0.03, now.timeIntervalSince(manager.lastCursorMove) > 0.2 else { return }
+        guard now.timeIntervalSince(lastHover) > 0.03, now.timeIntervalSince(s.lastCursorMove) > 0.2 else { return }
         lastHover = now
+        if let f = s.focused, s.frames[f]?.contains(p) == true, !s.floatingFrames.contains(where: { $0.contains(p) }) { return }
+        guard let id = s.window(at: p), id != s.focused, !s.focusUnmanaged else { return }
         DispatchQueue.main.async { [manager] in
-            if let id = manager.window(at: p), id != manager.focused, !manager.focusInUnmanagedWindow {
-                manager.focus(id, warp: false)
-            }
+            if id != manager.focused { manager.focus(id, warp: false) }
         }
     }
 }

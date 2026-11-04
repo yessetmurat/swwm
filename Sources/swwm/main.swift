@@ -70,7 +70,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.notify("Floating windows on top need the updated Dock module: "
                 + "run `sudo swwm --install-dock-module`, then `killall Dock`.")
         }
-        manager.onChange = { bar.setNeedsUpdate() }
+        manager.tapState = tap.state
+        manager.onChange = { [weak manager] in
+            bar.setNeedsUpdate()
+            manager?.publishSoon()
+        }
         tap.onMouseMoved = { bar.cursorMoved($0) }
         manager.onReload = { loader.reload() }
         manager.onQuit = { NSApp.terminate(nil) }

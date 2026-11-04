@@ -45,7 +45,9 @@ final class Manager: AppEvents {
     private static let savedFile = URL(fileURLWithPath: NSTemporaryDirectory()).appending(path: "swwm-workspaces.json")
     private var history = FocusHistory()
     var focused: WindowID? { history.current }
-    private(set) var lastCursorMove = Date.distantPast   // when swwm last moved the cursor (a warp or its own click)
+    private(set) var lastCursorMove = Date.distantPast { didSet { publishSoon() } }  // a warp or swwm's own click
+    weak var tapState: TapStateBox?                       // what the event tap decides from
+    private var publishPending = false
     private let park = FocusPark()
     private var parkGeneration = 0                       // a pending desktop click is dropped once this moves
     private var pendingPark: (info: MonitorInfo, points: [CGPoint], generation: Int)?
@@ -632,7 +634,10 @@ final class Manager: AppEvents {
     func readFrame(_ id: WindowID, reply: @escaping (CGRect?) -> Void) {
         guard let w = windows[id], let c = connections?.connection(w.pid) else { return reply(nil) }
         c.readFrame(id) { [weak self] f in
-            if let f { self?.windows[id]?.frame = f }
+            if let f {
+                self?.windows[id]?.frame = f
+                self?.publishSoon()
+            }
             reply(f)
         }
     }
@@ -646,18 +651,36 @@ final class Manager: AppEvents {
 
     // MARK: - Mouse support
 
-    /// The topmost managed window under `p`, or nil when an unmanaged window is on top.
-    func window(at p: CGPoint) -> WindowID? {
-        guard let hit = WindowServer.windowAt(p).flatMap(WindowServer.window),
-              let id = SwwmCore.windowUnder(p, in: [hit], ownPID: getpid(), raised: levels.isRaised) else { return nil }
-        // Hidden windows keep a sliver on screen; they must never take focus.
-        return windows[id] != nil && hidden[id] == nil ? id : nil
-    }
-
     /// True while the user is in a window swwm does not manage (a system prompt
     /// such as SecurityAgent's, a sheet, a launcher panel): focus-follows-mouse
     /// must not pull focus away from it. Kept from the focus reports.
-    private(set) var focusInUnmanagedWindow = false
+    private(set) var focusInUnmanagedWindow = false { didSet { publishSoon() } }
+
+    /// Gives the event tap a fresh `TapState`, once per run-loop turn of
+    /// changes.
+    func publishSoon() {
+        guard tapState != nil, !publishPending else { return }
+        publishPending = true
+        DispatchQueue.main.async { [self] in
+            publishPending = false
+            let shown = Set(windows.keys.filter { world.isVisible($0) && hidden[$0] == nil })
+            let floating = Set(windows.keys.filter { world.workspace(containing: $0)?.floating[$0] != nil })
+            let frames = windows.mapValues(\.frame)
+            let floatingFrames = focused.flatMap(world.workspace(containing:)).map { Array($0.floating.values) } ?? []
+            let raised = Set(windows.keys.filter(levels.isRaised))
+            let (focused, unmanaged, moved) = (self.focused, focusInUnmanagedWindow, lastCursorMove)
+            tapState?.update {
+                $0.takesFocus = shown
+                $0.floating = floating
+                $0.frames = frames
+                $0.floatingFrames = floatingFrames
+                $0.raised = raised
+                $0.focused = focused
+                $0.focusUnmanaged = unmanaged
+                $0.lastCursorMove = moved
+            }
+        }
+    }
 
     func setFrame(_ id: WindowID, _ r: CGRect) {
         if let w = windows[id] { connections?.connection(w.pid)?.setFrame(id, r) }
@@ -668,7 +691,7 @@ final class Manager: AppEvents {
     func pid(of id: WindowID) -> pid_t? { windows[id]?.pid }
 
     /// A click or key press: focus that follows it is the user's doing.
-    func noteInput() { history.input(at: Date()) }
+    func noteInput(at t: Date) { history.input(at: t) }
 
     /// From what swwm already knows: no AX round-trips, so a hung app cannot
     /// stall a query (and the event tap on the main thread).
