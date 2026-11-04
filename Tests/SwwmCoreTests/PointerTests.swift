@@ -133,22 +133,24 @@ private func w(
 
 @Test func rightEdgeResize() {
     let old = CGRect(x: 0, y: 0, width: 400, height: 300)
-    #expect(nativeChange(
+    let result = nativeChange(
         from: old,
         to: CGRect(x: 0, y: 0, width: 450, height: 300),
         pressedAt: CGPoint(x: 398, y: 150),
         clickCount: 1
     )
-        == .resized(CGSize(width: 50, height: 0)))
+
+    #expect(result == .resized(CGSize(width: 50, height: 0)))
 }
 
 @Test func leftEdgeResize() {
     let old = CGRect(x: 100, y: 0, width: 400, height: 300)
-    #expect(nativeChange(
+    let result = nativeChange(
         from: old,
         to: CGRect(x: 80, y: 0, width: 420, height: 300),
         pressedAt: CGPoint(x: 101, y: 150),
         clickCount: 1
     )
-        == .resized(CGSize(width: -20, height: 0)))
+
+    #expect(result == .resized(CGSize(width: -20, height: 0)))
 }

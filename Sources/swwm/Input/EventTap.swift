@@ -233,15 +233,25 @@ final class EventTap {
         }
         lastHover = now
 
-        if let f = s.view.focused, s.view.frames[f]?.contains(p) == true, !s.view.floatingFrames.contains(where: { $0.contains(p) }) { return }
-        guard let id = s.window(at: p), hoverTakesFocus(
+        let onFocused = s.view.focused.flatMap { s.view.frames[$0] }?.contains(p) == true
+        let onFloating = s.view.floatingFrames.contains { $0.contains(p) }
+        if onFocused && !onFloating {
+            return
+        }
+
+        guard let id = s.window(at: p) else {
+            return
+        }
+
+        let takesFocus = hoverTakesFocus(
             id,
             focused: s.view.focused,
             shown: s.view.takesFocus,
             focusUnmanaged: s.view.focusUnmanaged,
             lastCursorMove: s.view.lastCursorMove,
             now: now
-        ) else {
+        )
+        guard takesFocus else {
             return
         }
 

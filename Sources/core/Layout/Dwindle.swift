@@ -160,33 +160,35 @@ public final class DwindleTree {
     static func divide(_ r: CGRect, ratio: CGFloat, gap: CGFloat) -> (CGRect, CGRect) {
         if sideBySide(r) {
             let w = (r.width - gap) * ratio
-            return (CGRect(
+            let left = CGRect(
                 x: r.minX,
                 y: r.minY,
                 width: w,
                 height: r.height
-            ),
-                    CGRect(
-                        x: r.minX + w + gap,
-                        y: r.minY,
-                        width: r.width - w - gap,
-                        height: r.height
-                    ))
+            )
+            let right = CGRect(
+                x: r.minX + w + gap,
+                y: r.minY,
+                width: r.width - w - gap,
+                height: r.height
+            )
+            return (left, right)
         }
 
         let h = (r.height - gap) * ratio
-        return (CGRect(
+        let top = CGRect(
             x: r.minX,
             y: r.minY,
             width: r.width,
             height: h
-        ),
-                CGRect(
-                    x: r.minX,
-                    y: r.minY + h + gap,
-                    width: r.width,
-                    height: r.height - h - gap
-                ))
+        )
+        let bottom = CGRect(
+            x: r.minX,
+            y: r.minY + h + gap,
+            width: r.width,
+            height: r.height - h - gap
+        )
+        return (top, bottom)
     }
 }
 

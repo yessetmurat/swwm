@@ -22,13 +22,17 @@ struct TapState: Sendable {
     /// The managed window a click or hover at `p` reaches, as the window
     /// server hit-tests it. Any thread.
     func window(at p: CGPoint) -> WindowID? {
-        guard let hit = WindowServer.windowAt(p).flatMap(WindowServer.window),
-              let id = windowUnder(
-                  p,
-                  in: [hit],
-                  ownPID: getpid(),
-                  raised: view.raised.contains
-              ) else {
+        guard let hit = WindowServer.windowAt(p).flatMap(WindowServer.window) else {
+            return nil
+        }
+
+        let id = windowUnder(
+            p,
+            in: [hit],
+            ownPID: getpid(),
+            raised: view.raised.contains
+        )
+        guard let id else {
             return nil
         }
 

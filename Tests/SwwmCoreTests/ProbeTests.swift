@@ -26,18 +26,20 @@ private let waits = [0.03, 0.06, 0.1, 0.15]
 }
 
 @Test func noAxisAsksAgain() {
-    guard case .askAgain(let a) = probeStep(
+    let first = probeStep(
         width: false,
         height: false,
         attempt: 0,
         waits: waits
-    ),
-          case .askAgain(let b) = probeStep(
-              width: false,
-              height: false,
-              attempt: 1,
-              waits: waits
-          ) else {
+    )
+    let second = probeStep(
+        width: false,
+        height: false,
+        attempt: 1,
+        waits: waits
+    )
+
+    guard case .askAgain(let a) = first, case .askAgain(let b) = second else {
         Issue.record("expected askAgain")
         return
     }

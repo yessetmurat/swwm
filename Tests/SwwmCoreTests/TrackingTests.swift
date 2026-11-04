@@ -133,14 +133,15 @@ private func saved(
     var r = Remembered()
     r.remember(1, .init(workspace: "2", pid: 10, floating: true))
 
-    #expect(trackDecision(
+    let result = trackDecision(
         snap(),
         world: world([B]),
         context: ctx(),
         remembered: &r,
         saved: nil
     )
-        == .manage(workspace: "2", floating: true))
+
+    #expect(result == .manage(workspace: "2", floating: true))
     #expect(!r.contains(1))
 }
 
@@ -148,14 +149,15 @@ private func saved(
     var r = Remembered()
     r.remember(1, .init(workspace: "x", pid: 10, floating: false))
 
-    #expect(trackDecision(
+    let result = trackDecision(
         snap(),
         world: world([B]),
         context: ctx(),
         remembered: &r,
         saved: nil
     )
-        == .manage(workspace: "1", floating: false))
+
+    #expect(result == .manage(workspace: "1", floating: false))
 }
 
 @Test func savedWorkspaceApplies() {
