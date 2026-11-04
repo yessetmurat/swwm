@@ -21,7 +21,7 @@ public struct Settings: Equatable, Sendable {
 }
 
 /// A font as "Family:Style:Size", e.g. "IBM Plex Mono:SemiBold:15".
-public struct FontSpec: Equatable, Sendable {
+public struct FontSpec: Hashable, Sendable {
 
     public var family: String
     public var style: String

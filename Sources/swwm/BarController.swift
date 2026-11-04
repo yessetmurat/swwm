@@ -25,6 +25,7 @@ final class BarController {
     private var status = Status(language: nil, clock: clockText(Date()), battery: nil, volume: nil)
     private var scheduled = false
     private var steppedAside: Set<MonitorID> = []
+    private var rendered: [MonitorID: (BarState, Status, BarStyle)] = [:]  // what each panel shows
 
     init(manager: Manager) {
         self.manager = manager
@@ -32,6 +33,7 @@ final class BarController {
 
     /// Matches panels to the connected displays and their frames.
     func rebuild() {
+        rendered = [:]
         let monitors = manager.world.monitors
         for (id, panel) in panels where !monitors.contains(where: { $0.id == id }) {
             panel.close()
@@ -80,7 +82,11 @@ final class BarController {
         let world = manager.world
         for m in world.monitors {
             let state = world.barState(on: m.id, focused: manager.focused) { [manager] in manager.appName(of: $0) }
-            panels[m.id]?.render(state, status, style: world.config.bar) { [manager] in manager.show($0) }
+            let style = world.config.bar
+            // Only when something it shows changed: focus moves often, a redraw builds every item.
+            if let r = rendered[m.id], r.0 == state, r.1 == status, r.2 == style { continue }
+            rendered[m.id] = (state, status, style)
+            panels[m.id]?.render(state, status, style: style) { [manager] in manager.show($0) }
         }
     }
 }

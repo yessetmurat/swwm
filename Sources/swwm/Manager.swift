@@ -41,6 +41,7 @@ final class Manager: AppEvents {
     var tilesByKind: [String: Bool] = [:]                  // learned from the first window of each kind
     var settling: Set<WindowID> = []                       // new, until the size check: their own resizes are undone
     private var savePending = false
+    private var lastSaved: Data?                           // what the file holds
     /// Per login session: the temporary directory is cleared on reboot.
     private static let savedFile = URL(fileURLWithPath: NSTemporaryDirectory()).appending(path: "swwm-workspaces.json")
     private var history = FocusHistory()
@@ -150,7 +151,10 @@ final class Manager: AppEvents {
                 s = s.merging(saved, pending: Set(pendingStart.map { Int32($0) }),
                               untouched: Set(world.workspaceNames).subtracting(touched))
             }
-            try? JSONEncoder().encode(s).write(to: Self.savedFile, options: .atomic)
+            // Most layouts change nothing that is saved: no write then.
+            guard let data = try? JSONEncoder().encode(s), data != lastSaved else { return }
+            lastSaved = data
+            try? data.write(to: Self.savedFile, options: .atomic)
         }
     }
 

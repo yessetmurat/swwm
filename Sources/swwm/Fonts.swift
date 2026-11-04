@@ -27,6 +27,16 @@ enum Fonts {
     /// Finds the face by family and style name (PostScript names differ:
     /// "SemiBold" is IBMPlexMono-SmBld); falls back to a semibold system font.
     static func font(_ spec: FontSpec) -> NSFont {
+        if let font = cache[spec] { return font }
+        let font = lookUp(spec)
+        cache[spec] = font
+        return font
+    }
+
+    /// Looked up once per spec: the bar asks on every redraw. Main thread.
+    nonisolated(unsafe) private static var cache: [FontSpec: NSFont] = [:]
+
+    private static func lookUp(_ spec: FontSpec) -> NSFont {
         let size = CGFloat(spec.size)
         let members = NSFontManager.shared.availableMembers(ofFontFamily: spec.family) ?? []
         if let member = members.first(where: { ($0[1] as? String)?.caseInsensitiveCompare(spec.style) == .orderedSame }),

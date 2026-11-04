@@ -47,3 +47,9 @@ import Testing
     #expect(languageLabel(["de-CH"]) == "DE")
     #expect(languageLabel([]) == nil)
 }
+
+@Test func clockTicksOnTheNextWholeMinute() {
+    let t = Date(timeIntervalSinceReferenceDate: 60 * 1000 + 30.2)
+    #expect(nextMinute(after: t) == Date(timeIntervalSinceReferenceDate: 60 * 1001))
+    #expect(nextMinute(after: Date(timeIntervalSinceReferenceDate: 60 * 1001)) == Date(timeIntervalSinceReferenceDate: 60 * 1002))
+}

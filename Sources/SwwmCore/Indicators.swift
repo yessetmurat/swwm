@@ -27,6 +27,11 @@ public func clockText(_ date: Date, timeZone: TimeZone = .current) -> String {
     return f.string(from: date)
 }
 
+/// When the clock text changes next: the clock shows minutes.
+public func nextMinute(after date: Date) -> Date {
+    Date(timeIntervalSinceReferenceDate: (date.timeIntervalSinceReferenceDate / 60).rounded(.down) * 60 + 60)
+}
+
 /// nil percent (no battery) hides the item.
 public func batteryItem(percent: Int?, onAC: Bool) -> IndicatorItem? {
     guard let p = percent else { return nil }

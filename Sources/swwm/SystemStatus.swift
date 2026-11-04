@@ -31,10 +31,10 @@ final class SystemStatus {
             forName: Notification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String), object: nil, queue: .main
         ) { [weak self] _ in self?.refreshLanguage() }
 
-        let t = Timer(fire: Date(timeIntervalSinceReferenceDate: Date.timeIntervalSinceReferenceDate.rounded(.up)),
-                      interval: 1, repeats: true) { [weak self] _ in self?.refreshClock() }
-        RunLoop.main.add(t, forMode: .common)
-        timer = t
+        startClock()
+        for name in [Notification.Name.NSSystemClockDidChange, .NSSystemTimeZoneDidChange] {
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in self?.startClock() }
+        }
 
         let context = Unmanaged.passUnretained(self).toOpaque()
         if let source = IOPSNotificationCreateRunLoopSource({ ctx in
@@ -45,7 +45,10 @@ final class SystemStatus {
         }
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
-        ) { [weak self] _ in self?.refreshBattery() }
+        ) { [weak self] _ in
+            self?.refreshBattery()
+            self?.startClock()
+        }
 
         var defaultOutput = Self.address(kAudioHardwarePropertyDefaultOutputDevice)
         AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &defaultOutput, .main) { [weak self] _, _ in
@@ -55,6 +58,15 @@ final class SystemStatus {
 
         refreshLanguage()
         refreshBattery()
+    }
+
+    /// The clock shows minutes: it ticks on each whole minute, from now on.
+    private func startClock() {
+        timer?.invalidate()
+        refreshClock()
+        let t = Timer(fire: nextMinute(after: Date()), interval: 60, repeats: true) { [weak self] _ in self?.refreshClock() }
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
     }
 
     // MARK: - Pieces
