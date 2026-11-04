@@ -28,10 +28,8 @@ final class Manager {
     var dockModuleInstalled = false                        // set at start from DockModuleInstaller.isInstalled
     private var shadowNoticeShown = false
     var onShadowUnavailable: () -> Void = {}
-    private var raised: Set<WindowID> = []                 // set to the floating level by swwm
-    private var raisedChildren: [WindowID: pid_t] = [:]    // sheets and dialogs among them, by app
-    private let sheetQueue = DispatchQueue(label: "dev.swwm.sheets")
-    private var levelNoticeShown = false
+    var levels = FloatingLevels()                          // windows swwm put at the floating level
+    var levelNoticeShown = false
     var onLevelUnavailable: () -> Void = {}
     private var remembered = Remembered()                  // minimized windows and those of hidden apps
     private var saved: SavedWorkspaces?                    // from the last run, read at start
@@ -83,12 +81,19 @@ final class Manager {
     /// fullscreen windows are not managed.
     @discardableResult
     /// `adopting`: found at start, so the last run's saved state applies to it.
-    func track(_ w: AXWindow, near point: CGPoint, adopting: Bool = false) -> Bool {
-        guard windows[w.id] == nil, NSRunningApplication(processIdentifier: w.pid)?.isManageable == true,
-              w.isStandard, w.level == 0 || (adopting && raisedLastRun(w)), !w.isFullScreen, !w.isMinimized else {
-            log.debug("skip \(w.id, privacy: .public) \(w.appName, privacy: .public) role=\(w.element.attribute(kAXRoleAttribute) as String? ?? "-", privacy: .public) sub=\(w.element.attribute(kAXSubroleAttribute) as String? ?? "-", privacy: .public) level=\(w.level, privacy: .public) full=\(w.isFullScreen, privacy: .public) min=\(w.isMinimized, privacy: .public)")
+    /// `facts`: read already (on the AX thread); nil reads them here.
+    func track(_ w: AXWindow, facts: WindowFacts? = nil, near point: CGPoint, adopting: Bool = false) -> Bool {
+        guard windows[w.id] == nil, NSRunningApplication(processIdentifier: w.pid)?.isManageable == true else { return false }
+        let facts = facts ?? WindowFacts(w)
+        let level = w.level
+        guard facts.isStandard, level == 0 || levels.isChild(w.id) || (adopting && raisedLastRun(w)),
+              !facts.isFullScreen, !facts.isMinimized else {
+            log.debug("skip \(w.id, privacy: .public) \(w.appName, privacy: .public) role=\(facts.role ?? "-", privacy: .public) sub=\(facts.subrole ?? "-", privacy: .public) level=\(level, privacy: .public) full=\(facts.isFullScreen, privacy: .public) min=\(facts.isMinimized, privacy: .public)")
             return false
         }
+        // Raised before its app reported it, as an app's windows are while the
+        // app has a floating one: from now on its own floating state decides.
+        levels.adopt(w.id, pid: w.pid)
         // A new or newly shown native tab takes the tile of the tab it covers,
         // which drops out of the app's window list. No tab bar check: when a
         // tab closes, the next one is reported before the close, already alone.
@@ -135,7 +140,7 @@ final class Manager {
         if focused == old { history.focused(w.id, at: Date()) }
         AppObserver.current?.watch(w)
         applyShadow(w.id)
-        if raised.remove(old) != nil { dock.setLevel(old, WindowLevel.normal) }  // the tab left behind
+        send(levels.set(old, pid: w.pid, floating: false))  // the tab left behind
         applyLevel(w.id)
         onChange()
         saveSoon()
@@ -188,124 +193,6 @@ final class Manager {
         for id in windows.keys { applyShadow(id) }
     }
 
-    /// Floating windows stay above tiled ones: through the Dock module they
-    /// get the floating window level, and the normal level once they tile.
-    func applyLevel(_ id: WindowID) {
-        let floating = world.workspace(containing: id)?.floating[id] != nil
-        guard floating != raised.contains(id) else { return }
-        if floating { raised.insert(id) } else { raised.remove(id) }
-        if !floating, let pid = windows[id]?.pid { lowerChildren(of: pid) }
-        if floating, let w = windows[id] {  // a sheet already open goes up with it
-            let kids: [AXUIElement] = w.element.attribute(kAXChildrenAttribute) ?? []
-            for k in kids where k.attribute(kAXRoleAttribute) == kAXSheetRole as String {
-                childWindowAppeared(k, pid: w.pid)
-            }
-        }
-        dock.setLevel(id, floating ? WindowLevel.floating : WindowLevel.normal) { [weak self] reply in
-            guard let self, reply != .done else { return }
-            if floating { self.raised.remove(id) }  // asked again on the next change or Dock restart
-            // Unreachable is the shadow notice's case; turned down means an older payload.
-            guard reply == .rejected, self.dockModuleInstalled, !self.levelNoticeShown else { return }
-            self.levelNoticeShown = true
-            self.onLevelUnavailable()
-        }
-    }
-
-    func applyLevelAll() {
-        for id in windows.keys { applyLevel(id) }
-    }
-
-    /// A sheet of a raised window, or a dialog swwm does not manage of an app
-    /// with a raised window, would open under it: it goes up too. Closed ones
-    /// drop out of `raised` here, so the set stays small.
-    func childWindowAppeared(_ element: AXUIElement, pid: pid_t, attempt: Int = 0) {
-        var id: CGWindowID = 0
-        guard _AXUIElementGetWindow(element, &id) == .success, id != 0 else {
-            // A sheet is reported before it has a window number (System Settings).
-            if attempt < 3 {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-                    self?.childWindowAppeared(element, pid: pid, attempt: attempt + 1)
-                }
-            }
-            return
-        }
-        guard windows[id] == nil, !raised.contains(id) else { return }
-        if element.attribute(kAXRoleAttribute) == kAXSheetRole as String {
-            var parent: CGWindowID = 0
-            guard let p: AXUIElement = element.attribute(kAXParentAttribute),
-                  _AXUIElementGetWindow(p, &parent) == .success, raised.contains(parent) else { return }
-        } else {
-            // Dialogs only: a standard window swwm turned down now may be managed
-            // later (its subrole not ready yet) and must stay at the normal level.
-            let subrole: String? = element.attribute(kAXSubroleAttribute)
-            guard [kAXDialogSubrole as String, kAXSystemDialogSubrole as String].contains(subrole),
-                  windows.values.contains(where: { $0.pid == pid && raised.contains($0.id) }),
-                  WindowServer.window(id)?.layer == 0 else { return }  // never system prompts or overlays
-        }
-        for gone in raisedChildren.keys where WindowServer.window(gone) == nil {
-            raisedChildren[gone] = nil
-            raised.remove(gone)
-        }
-        log.debug("raise child \(id, privacy: .public) of pid \(pid, privacy: .public)")
-        raised.insert(id)
-        raisedChildren[id] = pid
-        dock.setLevel(id, WindowLevel.floating) { [weak self] reply in
-            guard reply != .done else { return }
-            self?.raised.remove(id)
-            self?.raisedChildren[id] = nil
-        }
-    }
-
-    /// A sheet is on screen well before its app reports it (System Settings:
-    /// about 250 ms later), hidden under its raised window until then. After a
-    /// click or a key in an app with a raised window, watch the window server
-    /// for a short while and raise a new window that sits inside one of the
-    /// app's raised windows. Off the main thread: right then the app is busy
-    /// and swwm's AX calls to it hold the main thread. `pid` nil: the
-    /// frontmost app.
-    func watchForSheets(pid: pid_t?) {
-        guard let pid = pid ?? NSWorkspace.shared.frontmostApplication?.processIdentifier else { return }
-        let parents = Set(windows.values.filter { $0.pid == pid && raised.contains($0.id) }.map(\.id))
-        guard !parents.isEmpty else { return }
-        let known = Set(windows.keys).union(raised)
-        sheetQueue.async { [weak self, dock] in
-            let end = Date().addingTimeInterval(0.6)
-            var done = known
-            while Date() < end {
-                let mine = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
-                    as? [[String: Any]] ?? []).filter { ($0[kCGWindowOwnerPID as String] as? Int32) == pid }
-                func id(_ i: [String: Any]) -> WindowID? { (i[kCGWindowNumber as String] as? Int).map(WindowID.init) }
-                func bounds(_ i: [String: Any]) -> CGRect? {
-                    (i[kCGWindowBounds as String] as? NSDictionary).flatMap { CGRect(dictionaryRepresentation: $0) }
-                }
-                let frames = mine.filter { id($0).map(parents.contains) == true }.compactMap(bounds)
-                for i in mine where (i[kCGWindowLayer as String] as? Int) == 0 {
-                    guard let w = id(i), !done.contains(w), let b = bounds(i),
-                          frames.contains(where: { $0.insetBy(dx: -1, dy: -1).contains(b) }) else { continue }
-                    done.insert(w)
-                    dock.setLevel(w, WindowLevel.floating) { reply in
-                        guard reply == .done, let self else { return }
-                        log.debug("raise sheet \(w, privacy: .public) seen on screen")
-                        self.raised.insert(w)
-                        self.raisedChildren[w] = pid
-                    }
-                }
-                Thread.sleep(forTimeInterval: 0.016)
-            }
-        }
-    }
-
-    /// Sheets and dialogs of `pid` go back down once the app has no raised
-    /// window left.
-    private func lowerChildren(of pid: pid_t) {
-        guard !windows.values.contains(where: { $0.pid == pid && raised.contains($0.id) }) else { return }
-        for (id, owner) in raisedChildren where owner == pid {
-            raisedChildren[id] = nil
-            raised.remove(id)
-            dock.setLevel(id, WindowLevel.normal)
-        }
-    }
-
     /// Removes a window; when it had focus, focus goes to another window of the same display.
     func untrack(_ id: WindowID, remember: Bool) {
         defer { onChange() }
@@ -319,10 +206,7 @@ final class Manager {
         }
         // Minimized or hidden it lives on: back to the normal level, so it is
         // managed again when it returns.
-        if raised.remove(id) != nil {
-            if remember { dock.setLevel(id, WindowLevel.normal) }
-            lowerChildren(of: w.pid)
-        }
+        send(remember ? levels.set(id, pid: w.pid, floating: false) : levels.gone(id))
         let now = Date()
         let hadFocus = history.wasRecentlyFocused(id, now: now)
         history.removed(at: now)
@@ -396,8 +280,7 @@ final class Manager {
         if settings.windowShadow != .on {
             dock.setShadowsSync(windows.keys.map { (id: $0, shadow: true) })
         }
-        dock.setLevelsSync(raised.map { (id: $0, level: WindowLevel.normal) })
-        raised = []
+        dock.setLevelsSync(levels.removeAll().map { (id: $0.window, level: $0.level) })
     }
 
     func displaysChanged() {
@@ -537,22 +420,20 @@ final class Manager {
         }
     }
 
+    /// The focused window of the app now frontmost; read here, at start only.
+    /// Later activations come from the AX thread as `windowFocusChanged`.
     func appActivated(_ app: NSRunningApplication) {
         log.debug("appActivated \(app.localizedName ?? "?", privacy: .public)")
         let el = AXUIElementCreateApplication(app.processIdentifier)
         guard let win: AXUIElement = el.attribute(kAXFocusedWindowAttribute),
               let w = AXWindow(win, app: app) else { return }
-        windowFocusChanged(w)
+        windowFocusChanged(w, facts: WindowFacts(w))
     }
 
     /// A focus change reported by an app. A window that was not manageable
     /// when it appeared (fullscreen, subrole not ready yet) gets another try.
-    func windowFocusChanged(_ w: AXWindow) {
-        if windows[w.id] == nil {
-            windowCreated(w)
-            // A sheet takes focus when it opens: a second chance to raise it.
-            if windows[w.id] == nil { childWindowAppeared(w.element, pid: w.pid) }
-        }
+    func windowFocusChanged(_ w: AXWindow, facts: WindowFacts) {
+        if windows[w.id] == nil { windowCreated(w, facts: facts) }
         windowFocused(w.id)
     }
 
@@ -687,10 +568,10 @@ final class Manager {
 
     // MARK: - Events
 
-    func windowCreated(_ w: AXWindow) {
+    func windowCreated(_ w: AXWindow, facts: WindowFacts) {
         // New windows open on the display under the cursor.
         let returning = remembered.contains(w.id)  // unminimized or unhidden: keeps its place
-        guard track(w, near: Displays.cursor), let ws = world.workspace(containing: w.id), let m = world.monitor(of: ws.name) else { return }
+        guard track(w, facts: facts, near: Displays.cursor), let ws = world.workspace(containing: w.id), let m = world.monitor(of: ws.name) else { return }
         if !returning, ws.tree.contains(w.id), world.isVisible(w.id) {
             switch tilesByKind[kind(of: w)] {
             case true?: settle(w.id, on: m)
@@ -799,8 +680,9 @@ final class Manager {
         remembered.forget(pid: pid)
     }
 
-    func rescan(_ app: NSRunningApplication) {
-        for w in AXWindow.windows(of: app) { windowCreated(w) }
+    /// An app's windows, listed on the AX thread; known ones are skipped.
+    func rescan(_ found: [(window: AXWindow, facts: WindowFacts)]) {
+        for f in found { windowCreated(f.window, facts: f.facts) }
     }
 
     // MARK: - Mouse support
@@ -819,7 +701,7 @@ final class Manager {
             // swwm's own bar is on top here: nothing under it takes focus.
             if w.pid == me, w.alpha > 0 { return nil }
             // Floating windows swwm raised, and their sheets, sit above layer 0.
-            guard w.layer == 0 || (w.layer == Int(WindowLevel.floating) && raised.contains(w.id)) else { continue }
+            guard w.layer == 0 || (w.layer == Int(WindowLevel.floating) && levels.isRaised(w.id)) else { continue }
             // Hidden windows keep a sliver on screen; they must never take focus.
             return windows[w.id] != nil && hidden[w.id] == nil ? w.id : nil
         }

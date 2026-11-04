@@ -13,6 +13,26 @@ import SwwmCore
 @_silgen_name("_AXUIElementGetWindow")
 func _AXUIElementGetWindow(_ element: AXUIElement, _ id: UnsafeMutablePointer<CGWindowID>) -> AXError
 
+/// What decides whether swwm manages a window, read in one go: for windows
+/// an app reports, on the AX thread, as the app may be too busy to answer
+/// right then.
+struct WindowFacts {
+
+    let role: String?
+    let subrole: String?
+    let isFullScreen: Bool
+    let isMinimized: Bool
+
+    init(_ w: AXWindow) {
+        role = w.element.attribute(kAXRoleAttribute)
+        subrole = w.element.attribute(kAXSubroleAttribute)
+        isFullScreen = w.isFullScreen
+        isMinimized = w.isMinimized
+    }
+
+    var isStandard: Bool { role == kAXWindowRole as String && subrole == kAXStandardWindowSubrole as String }
+}
+
 /// A window of another app, driven through the Accessibility API.
 /// Coordinates are global with a top-left origin.
 struct AXWindow {
