@@ -85,6 +85,10 @@ final class AppConnection {
     private let focusTicket: FocusTicket
     private let screen: ScreenLock
     /// How long a call waits for the app's answer: only a hung app takes this long.
+    // Workaround: nothing tells swwm that an app hangs (the window server's
+    // unresponsive-app query said no for a stopped and for a hung app in a
+    // test on 2026-11-04), so a call gives up after this. A focus park waits
+    // this long for a hung app's window it hid.
     static let answerTimeout: Float = 30
 
     init(app: NSRunningApplication, ax: AXThread, events: AppEvents, adopting: Bool, focusTicket: FocusTicket,

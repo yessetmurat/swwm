@@ -82,6 +82,10 @@ struct AXWindow {
         withoutEnhancedUI {
             var size = r.size
             result = position(r.origin)
+            // An app that did not answer in time would make each of the next writes wait as long again.
+            guard result != .cannotComplete else {
+                return
+            }
             AXUIElementSetAttributeValue(element, kAXSizeAttribute as CFString, AXValueCreate(.cgSize, &size)!)
             position(r.origin)
         }
