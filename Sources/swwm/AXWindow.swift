@@ -83,8 +83,12 @@ struct AXWindow {
         return CGRect(origin: origin, size: size)
     }
 
-    func setPosition(_ p: CGPoint) {
-        withoutEnhancedUI { position(p) }
+    /// True when the app took the write.
+    @discardableResult
+    func setPosition(_ p: CGPoint) -> Bool {
+        var ok = false
+        withoutEnhancedUI { ok = position(p) }
+        return ok
     }
 
     /// Position, size, then position again: some apps clamp the size against
@@ -120,9 +124,10 @@ struct AXWindow {
         return axes
     }
 
-    private func position(_ p: CGPoint) {
+    @discardableResult
+    private func position(_ p: CGPoint) -> Bool {
         var p = p
-        AXUIElementSetAttributeValue(element, kAXPositionAttribute as CFString, AXValueCreate(.cgPoint, &p)!)
+        return AXUIElementSetAttributeValue(element, kAXPositionAttribute as CFString, AXValueCreate(.cgPoint, &p)!) == .success
     }
 
     /// With AXEnhancedUserInterface on (set by assistive apps), browsers

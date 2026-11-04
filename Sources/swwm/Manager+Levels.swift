@@ -38,7 +38,9 @@ extension Manager {
             send(levels.appeared(id, pid: w.pid, layer: w.layer, managed: windows[id] != nil))
         case .removed(let id):
             send(levels.gone(id))
-        case .moved, .resized:
+        case .moved(let id):
+            windowMoved(id)
+        case .resized:
             break
         }
     }
