@@ -512,8 +512,17 @@ final class Manager {
         guard windows[id] != nil, focused != id else { return }
         let now = Date()
         history.focused(id, at: now)
+        parkGeneration += 1  // a pending desktop click must not take focus back
         park.clear()
         world.noteFocused(id)
+        // Mouse follows focus whoever moved it (a new window, cmd-tab, a Dock
+        // click); after a hover or a click the cursor is on the window already.
+        // The tile, not the window's frame: a new window may not be there yet.
+        if settings.mouseFollowsFocus, world.isVisible(id), let r = world.layoutFrame(of: id, gap: settings.gap),
+           !r.contains(Displays.cursor) {
+            lastWarp = now
+            CGWarpMouseCursorPosition(CGPoint(x: r.midX, y: r.midY))
+        }
         // A window on a hidden workspace got focus (Dock click, app switch): show its
         // workspace, a moment later. Not around a close: that is macOS picking a
         // fallback app (on cmd-q before the quit is even reported), and the
