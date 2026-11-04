@@ -75,7 +75,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         manager.onQuit = { NSApp.terminate(nil) }
 
         tap.update(config: config)
-        WindowServer.start { manager.serverEvent($0) }
+        WindowServer.start {
+            manager.serverEvent($0)
+            observer.serverEvent($0)
+        }
         manager.start()
         bar.rebuild()
         let status = SystemStatus { bar.update(status: $0) }
