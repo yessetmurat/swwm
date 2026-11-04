@@ -73,7 +73,7 @@ final class EventTap {
             if let port { CGEvent.tapEnable(tap: port, enable: true) }
             return event
         case .keyDown:
-            noteInput()
+            noteInput(click: false)
             let combo = KeyCombo(keyCode: UInt16(event.getIntegerValueField(.keyboardEventKeycode)),
                                  modifiers: modifiers(event.flags))
             guard let command = s.bindings[combo] else { return event }
@@ -85,7 +85,7 @@ final class EventTap {
             hover(p, s)
             return event
         case .leftMouseDown, .rightMouseDown:
-            noteInput()
+            noteInput(click: true)
             let p = event.location
             guard modifiers(event.flags) == s.settings.mouseModifier else {
                 // A plain press may start a title-bar move or an edge resize.
@@ -95,7 +95,7 @@ final class EventTap {
             }
             guard let id = s.window(at: p), let frame = s.frames[id] else { return event }
             drag = Drag(window: id, resize: type == .rightMouseDown, floating: s.floating.contains(id), start: p, frame: frame)
-            DispatchQueue.main.async { [manager] in manager.focus(id, warp: false) }
+            DispatchQueue.main.async { [manager] in manager.pointerFocus(id, hover: false) }
             return nil
         case .leftMouseDragged, .rightMouseDragged:
             guard let d = drag else { return event }
@@ -135,9 +135,9 @@ final class EventTap {
     }
 
     /// A click or key press: focus that follows it is the user's doing.
-    private func noteInput() {
+    private func noteInput(click: Bool) {
         let now = Date()
-        DispatchQueue.main.async { [manager] in manager.noteInput(at: now) }
+        DispatchQueue.main.async { [manager] in manager.noteInput(at: now, click: click) }
     }
 
     /// The window was moved by its title bar or resized by an edge without
@@ -170,13 +170,12 @@ final class EventTap {
     private func hover(_ p: CGPoint, _ s: TapState) {
         guard s.settings.focusFollowsMouse, drag == nil else { return }
         let now = Date()
-        guard now.timeIntervalSince(lastHover) > 0.03, now.timeIntervalSince(s.lastCursorMove) > 0.2 else { return }
+        guard now.timeIntervalSince(lastHover) > 0.03 else { return }
         lastHover = now
         if let f = s.focused, s.frames[f]?.contains(p) == true, !s.floatingFrames.contains(where: { $0.contains(p) }) { return }
-        guard let id = s.window(at: p), id != s.focused, !s.focusUnmanaged else { return }
-        DispatchQueue.main.async { [manager] in
-            if id != manager.focused { manager.focus(id, warp: false) }
-        }
+        guard let id = s.window(at: p), hoverTakesFocus(id, focused: s.focused, shown: s.takesFocus, focusUnmanaged: s.focusUnmanaged,
+                                                       lastCursorMove: s.lastCursorMove, now: now) else { return }
+        DispatchQueue.main.async { [manager] in manager.pointerFocus(id, hover: true) }
     }
 }
 

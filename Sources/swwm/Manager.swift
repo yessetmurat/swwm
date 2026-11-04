@@ -313,6 +313,7 @@ final class Manager: AppEvents {
             focus(id)
         } else if let info = world.monitorInfo(m) {
             history.focused(nil, at: Date())
+            focusMovedOn()
             // The user's key or click that led here is used up: focus moves
             // that follow swwm's own desktop click are not the user's.
             history.input(at: .distantPast)
@@ -382,7 +383,7 @@ final class Manager: AppEvents {
         defer { onChange() }
         log.debug("windowFocused \(id, privacy: .public) managed=\(self.windows[id] != nil, privacy: .public)")
         guard windows[id] != nil, focused != id else { return }
-        _ = connections?.focusTicket.next()  // a focus command still queued is stale now
+        focusMovedOn()
         let now = Date()
         history.focused(id, at: now)
         parkGeneration += 1  // a pending desktop click must not take focus back
@@ -420,6 +421,7 @@ final class Manager: AppEvents {
 
     /// The app now frontmost has no focused window.
     func noFocusedWindow() {
+        focusMovedOn()
         focusInUnmanagedWindow = false
     }
 
@@ -428,7 +430,9 @@ final class Manager: AppEvents {
     func windowFocusChanged(_ w: AppWindow) {
         // An app still starting reports its windows first, with their last places.
         if windows[w.id] == nil, !pendingStart.contains(w.pid) { windowCreated(w) }
+        guard focusReportIsFocus(from: w.pid, frontmost: NSWorkspace.shared.frontmostApplication?.processIdentifier) else { return }
         focusInUnmanagedWindow = windows[w.id] == nil
+        if focusInUnmanagedWindow { focusMovedOn() }
         // Focus moved to a window swwm does not manage on another display:
         // the parked display no longer has the keyboard.
         if windows[w.id] == nil, let m = park.monitor, let b = WindowServer.window(w.id)?.bounds,
@@ -629,6 +633,31 @@ final class Manager: AppEvents {
         evaluatePark()
     }
 
+    /// An app that left writes unanswered (stopped, or busy for long)
+    /// answers again: its windows go where their workspaces want them.
+    func appAnswered(_ ids: Set<WindowID>) {
+        let mine = ids.filter { windows[$0] != nil }
+        needsPlacement.formUnion(mine)
+        Set(mine.compactMap { world.workspace(containing: $0).flatMap { world.monitor(of: $0.name) } }).forEach(layout)
+    }
+
+    /// Focus asked for from the pointer (a hover or a modifier press), checked
+    /// against the current state: the tap decided from a copy.
+    func pointerFocus(_ id: WindowID, hover: Bool) {
+        let shown: Set<WindowID> = windows[id] != nil && world.isVisible(id) && hidden[id] == nil ? [id] : []
+        if hover {
+            guard hoverTakesFocus(id, focused: focused, shown: shown, focusUnmanaged: focusInUnmanagedWindow,
+                                  lastCursorMove: lastCursorMove, now: Date()) else { return }
+        } else {
+            guard shown.contains(id) else { return }
+        }
+        focus(id, warp: false)
+    }
+
+    /// Focus moved somewhere swwm did not send it: a focus command still
+    /// waiting for its app is stale.
+    private func focusMovedOn() { _ = connections?.focusTicket.next() }
+
     /// The window's frame as its app has it now, for decisions made after
     /// something moved it; `reply` runs on main.
     func readFrame(_ id: WindowID, reply: @escaping (CGRect?) -> Void) {
@@ -691,7 +720,12 @@ final class Manager: AppEvents {
     func pid(of id: WindowID) -> pid_t? { windows[id]?.pid }
 
     /// A click or key press: focus that follows it is the user's doing.
-    func noteInput(at t: Date) { history.input(at: t) }
+    /// `click`: the user's own click focuses what it hits, so a focus command
+    /// still waiting for its app is stale.
+    func noteInput(at t: Date, click: Bool) {
+        history.input(at: t)
+        if click { focusMovedOn() }
+    }
 
     /// From what swwm already knows: no AX round-trips, so a hung app cannot
     /// stall a query (and the event tap on the main thread).

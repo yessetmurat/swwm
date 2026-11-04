@@ -58,6 +58,7 @@ protocol AppEvents: AnyObject {
     func titleChanged(_ id: WindowID, _ title: String)
     func focusChanged(_ w: AppWindow?, pid: pid_t)
     func writeFailed(_ id: WindowID)
+    func appAnswered(_ ids: Set<WindowID>)
 }
 
 /// Everything swwm says to one app goes through here, on the app's own
@@ -72,18 +73,23 @@ final class AppConnection {
     private let ax: AXThread
     private weak var events: AppEvents?
     private let queue: DispatchQueue
-    private var adopting: Bool                     // AX thread: the app ran when swwm started
+    private let adopting: Bool                     // the app ran when swwm started
+    private var reported = false                   // queue: its windows went to the manager once
     private var observer: AXObserver?              // AX thread
     private var registering = false                // AX thread
     private var watcher: AXObserver?               // queue: the same observer, for window notifications
     private var elements: [WindowID: AXUIElement] = [:]  // queue
     private var watched: Set<WindowID> = []        // queue
     private let writes = PendingWrites<WindowWrite>()
+    private var answers = AnswerWatch()            // queue
     private let focusTicket: FocusTicket
+    private let screen: ScreenLock
     /// How long a call waits for the app's answer: only a hung app takes this long.
     static let answerTimeout: Float = 30
 
-    init(app: NSRunningApplication, ax: AXThread, events: AppEvents, adopting: Bool, focusTicket: FocusTicket) {
+    init(app: NSRunningApplication, ax: AXThread, events: AppEvents, adopting: Bool, focusTicket: FocusTicket,
+         screen: ScreenLock) {
+        self.screen = screen
         self.app = app
         self.ax = ax
         self.events = events
@@ -102,7 +108,7 @@ final class AppConnection {
         queue.async { [self] in
             let observer = Self.register(pid)
             watcher = observer
-            let found = observer == nil ? [] : listed()
+            if observer != nil { reportWindows() }
             ax.perform { [self] in
                 registering = false
                 guard let observer, !app.isTerminated else {
@@ -111,9 +117,6 @@ final class AppConnection {
                 }
                 self.observer = observer
                 ax.add(AXObserverGetRunLoopSource(observer))
-                let adopting = self.adopting
-                self.adopting = false
-                DispatchQueue.main.async { [self] in events?.appWindows(found, pid: pid, adopting: adopting) }
             }
         }
     }
@@ -124,12 +127,21 @@ final class AppConnection {
         observer = nil
     }
 
-    /// Reports the app's windows again (the app was unhidden).
+    /// Reports the app's windows again (the app was unhidden, the screen
+    /// was unlocked).
     func rescan() {
-        queue.async { [self] in
-            let found = listed()
-            DispatchQueue.main.async { [self] in events?.appWindows(found, pid: pid, adopting: false) }
-        }
+        queue.async { [self] in reportWindows() }
+    }
+
+    /// The app's windows to the manager; the first report of an app that ran
+    /// when swwm started adopts them. Not while the screen is locked: apps
+    /// list no windows then (AX hands out the app element for each). Queue.
+    private func reportWindows() {
+        guard watcher != nil, !screen.isLocked else { return }
+        let found = listed()
+        let adopt = adopting && !reported
+        reported = true
+        DispatchQueue.main.async { [self] in events?.appWindows(found, pid: pid, adopting: adopt) }
     }
 
     /// Reports the app's focused window (the app was activated).
@@ -146,7 +158,8 @@ final class AppConnection {
     /// longer lists. `reply` runs on main.
     func readFrame(_ id: WindowID, reply: @escaping (CGRect?) -> Void) {
         queue.async { [self] in
-            let frame = window(id).map { w in Self.patiently(w.element) { w.frame } }
+            let frame = window(id).flatMap { w in Self.patiently(w.element) { w.frame } }
+            if frame != nil { answered() }
             DispatchQueue.main.async { reply(frame) }
         }
     }
@@ -163,13 +176,21 @@ final class AppConnection {
         guard writes.put(id, w) else { return }
         queue.async { [self] in
             guard let next = writes.take(id), let win = window(id) else { return }
-            let ok = Self.patiently(win.element) { () -> Bool in
+            let result = Self.patiently(win.element) { () -> AXError in
                 switch next {
                 case .frame(let r): return win.setFrame(r)
                 case .position(let p): return win.setPosition(p)
                 }
             }
-            if !ok { DispatchQueue.main.async { [self] in events?.writeFailed(id) } }
+            switch result {
+            case .success:
+                answered()
+            case .cannotComplete:  // no answer in time: placed again once the app answers
+                answers.noAnswer(id)
+                DispatchQueue.main.async { [self] in events?.writeFailed(id) }
+            default:               // turned down: the window stays where it is
+                DispatchQueue.main.async { [self] in events?.writeFailed(id) }
+            }
         }
     }
 
@@ -183,8 +204,8 @@ final class AppConnection {
     /// Focuses the window, unless focus moved on since `ticket` was taken.
     func focus(_ id: WindowID, ticket: Int) {
         queue.async { [self] in
-            guard focusTicket.current == ticket, let w = window(id) else { return }
-            Self.patiently(w.element) { w.focus() }
+            guard let w = window(id) else { return }
+            Self.patiently(w.element) { focusTicket.run(ticket, w.focusSteps) }
         }
     }
 
@@ -201,6 +222,14 @@ final class AppConnection {
         let done = DispatchSemaphore(value: 0)
         queue.async { done.signal() }
         _ = done.wait(timeout: .now() + timeout)
+    }
+
+    /// The app answered: windows whose writes it left unanswered are placed
+    /// again. Queue.
+    private func answered() {
+        let ids = answers.answered()
+        guard !ids.isEmpty else { return }
+        DispatchQueue.main.async { [self] in events?.appAnswered(ids) }
     }
 
     /// A window the app reported, for commands. Queue.
@@ -265,7 +294,7 @@ final class AppConnection {
         let window = Self.patiently(e) { () -> AppWindow in
             let w = AXWindow(element: e, pid: pid, id: id, appName: app.localizedName ?? "")
             let button: AXUIElement? = e.attribute(kAXFullScreenButtonAttribute)
-            return AppWindow(id: id, pid: pid, app: w.appName, title: w.title, frame: w.frame,
+            return AppWindow(id: id, pid: pid, app: w.appName, title: w.title, frame: w.frame ?? .zero,
                              layer: WindowServer.window(id)?.layer ?? 0, role: e.attribute(kAXRoleAttribute),
                              subrole: e.attribute(kAXSubroleAttribute), isFullScreen: w.isFullScreen,
                              isMinimized: w.isMinimized, isResizable: w.isResizable, hasFullScreenButton: button != nil,

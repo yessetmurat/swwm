@@ -57,34 +57,35 @@ struct AXWindow {
             && settable.boolValue
     }
 
-    var frame: CGRect {
+    /// Nil when the app does not tell (closing, or no answer).
+    var frame: CGRect? {
         var origin = CGPoint.zero, size = CGSize.zero
-        if let v: AXValue = element.attribute(kAXPositionAttribute) { AXValueGetValue(v, .cgPoint, &origin) }
-        if let v: AXValue = element.attribute(kAXSizeAttribute) { AXValueGetValue(v, .cgSize, &size) }
+        guard let p: AXValue = element.attribute(kAXPositionAttribute), let s: AXValue = element.attribute(kAXSizeAttribute),
+              AXValueGetValue(p, .cgPoint, &origin), AXValueGetValue(s, .cgSize, &size) else { return nil }
         return CGRect(origin: origin, size: size)
     }
 
-    /// True when the app took the write.
+    /// What the app said to the position write.
     @discardableResult
-    func setPosition(_ p: CGPoint) -> Bool {
-        var ok = false
-        withoutEnhancedUI { ok = position(p) }
-        return ok
+    func setPosition(_ p: CGPoint) -> AXError {
+        var result = AXError.success
+        withoutEnhancedUI { result = position(p) }
+        return result
     }
 
     /// Position, size, then position again: some apps clamp the size against
     /// the old position. Applied once; an app that refuses a size keeps its own.
-    /// True when the app took the position.
+    /// What the app said to the first position write.
     @discardableResult
-    func setFrame(_ r: CGRect) -> Bool {
-        var ok = false
+    func setFrame(_ r: CGRect) -> AXError {
+        var result = AXError.success
         withoutEnhancedUI {
             var size = r.size
-            ok = position(r.origin)
+            result = position(r.origin)
             AXUIElementSetAttributeValue(element, kAXSizeAttribute as CFString, AXValueCreate(.cgSize, &size)!)
             position(r.origin)
         }
-        return ok
+        return result
     }
 
     /// Which axes take a new size, found in place by asking for one point
@@ -92,11 +93,11 @@ struct AXWindow {
     func resizableAxes() -> (width: Bool, height: Bool) {
         var axes = (width: false, height: false)
         withoutEnhancedUI {
-            let s = frame.size
+            guard let s = frame?.size else { return }
             func size(_ w: CGFloat, _ h: CGFloat) -> CGSize {
                 var v = CGSize(width: w, height: h)
                 AXUIElementSetAttributeValue(element, kAXSizeAttribute as CFString, AXValueCreate(.cgSize, &v)!)
-                return frame.size
+                return frame?.size ?? s
             }
             var t = size(s.width + 1, s.height + 1)
             axes = (t.width != s.width, t.height != s.height)
@@ -110,9 +111,9 @@ struct AXWindow {
     }
 
     @discardableResult
-    private func position(_ p: CGPoint) -> Bool {
+    private func position(_ p: CGPoint) -> AXError {
         var p = p
-        return AXUIElementSetAttributeValue(element, kAXPositionAttribute as CFString, AXValueCreate(.cgPoint, &p)!) == .success
+        return AXUIElementSetAttributeValue(element, kAXPositionAttribute as CFString, AXValueCreate(.cgPoint, &p)!)
     }
 
     /// With AXEnhancedUserInterface on (set by assistive apps), browsers
@@ -131,10 +132,12 @@ struct AXWindow {
         AXUIElementPerformAction(element, kAXRaiseAction as CFString)
     }
 
-    func focus() {
-        AXUIElementSetAttributeValue(element, kAXMainAttribute as CFString, kCFBooleanTrue)
-        raise()
-        NSRunningApplication(processIdentifier: pid)?.activate()
+    /// Main window, raise, activate the app: separate steps, so a focus that
+    /// went stale while the app did not answer stops between them.
+    var focusSteps: [() -> Void] {
+        [{ AXUIElementSetAttributeValue(element, kAXMainAttribute as CFString, kCFBooleanTrue) },
+         { raise() },
+         { NSRunningApplication(processIdentifier: pid)?.activate() }]
     }
 }
 

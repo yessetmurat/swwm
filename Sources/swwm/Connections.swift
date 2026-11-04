@@ -24,6 +24,7 @@ final class Connections {
     private var startPids: Set<pid_t> = []  // main: apps running when swwm started
     private var tokens: [NSObjectProtocol] = []
     let focusTicket = FocusTicket()
+    private let screen = ScreenLock()
 
     init(manager: Manager) {
         self.manager = manager
@@ -50,6 +51,16 @@ final class Connections {
         startPids = Set(running.map(\.processIdentifier))
         manager.startApps(startPids)
         for app in running { connect(app) }
+        // While the screen is locked apps list no windows: they are reported
+        // once it is unlocked.
+        let dnc = DistributedNotificationCenter.default()
+        for (name, locked) in [("com.apple.screenIsLocked", true), ("com.apple.screenIsUnlocked", false)] {
+            tokens.append(dnc.addObserver(forName: Notification.Name(name), object: nil, queue: .main) { [weak self] _ in
+                guard let self else { return }
+                screen.isLocked = locked
+                if !locked { map.withLock { Array($0.values) }.forEach { $0.rescan() } }
+            })
+        }
         let nc = NSWorkspace.shared.notificationCenter
         func on(_ name: Notification.Name, _ handle: @escaping (NSRunningApplication) -> Void) {
             tokens.append(nc.addObserver(forName: name, object: nil, queue: .main) { note in
@@ -93,7 +104,8 @@ final class Connections {
         let pid = app.processIdentifier
         let c = map.withLock { map in
             if let c = map[pid] { return c }
-            let c = AppConnection(app: app, ax: ax, events: manager, adopting: startPids.contains(pid), focusTicket: focusTicket)
+            let c = AppConnection(app: app, ax: ax, events: manager, adopting: startPids.contains(pid), focusTicket: focusTicket,
+                                  screen: screen)
             map[pid] = c
             return c
         }
@@ -114,5 +126,20 @@ extension NSRunningApplication {
         case .accessory: return bundleURL.map { !$0.path.hasPrefix("/System/") } ?? false
         default: return false
         }
+    }
+}
+
+/// Whether the screen is locked; any thread.
+final class ScreenLock: Sendable {
+
+    private let locked = OSAllocatedUnfairLock(initialState: ScreenLock.lockedNow)
+
+    var isLocked: Bool {
+        get { locked.withLock { $0 } }
+        set { locked.withLock { $0 = newValue } }
+    }
+
+    private static var lockedNow: Bool {
+        (CGSessionCopyCurrentDictionary() as? [String: Any])?["CGSSessionScreenIsLocked"] as? Bool ?? false
     }
 }

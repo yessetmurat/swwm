@@ -21,4 +21,13 @@ public final class FocusTicket: Sendable {
     public func next() -> Int { value.withLock { $0 += 1; return $0 } }
 
     public var current: Int { value.withLock { $0 } }
+
+    /// Runs `steps` in order while `ticket` is current: an app may answer
+    /// one step only after a long stall, and focus may have moved on by then.
+    public func run(_ ticket: Int, _ steps: [() -> Void]) {
+        for step in steps {
+            guard current == ticket else { return }
+            step()
+        }
+    }
 }
