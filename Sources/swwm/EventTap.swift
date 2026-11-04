@@ -55,6 +55,7 @@ final class EventTap {
 
     /// Returns nil to swallow the event.
     fileprivate func handle(_ type: CGEventType, _ event: CGEvent) -> CGEvent? {
+        if event.getIntegerValueField(.eventSourceUserData) == FocusPark.syntheticMark { return event }
         switch type {
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
             if let port { CGEvent.tapEnable(tap: port, enable: true) }

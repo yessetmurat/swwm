@@ -44,6 +44,7 @@ final class Manager {
     var focused: WindowID? { history.current }
     private(set) var lastWarp = Date.distantPast         // when swwm last moved the cursor
     private let park = FocusPark()
+    private var parkGeneration = 0                       // a pending desktop click is dropped once this moves
     private var pendingFocus: [MonitorID: DispatchWorkItem] = [:]
 
     init(world: World) {
@@ -431,6 +432,7 @@ final class Manager {
     func focus(_ id: WindowID, warp: Bool = true) {
         defer { onChange() }
         guard let w = windows[id] else { return }
+        parkGeneration += 1
         park.clear()
         w.focus()
         history.focused(id, at: Date())
@@ -457,10 +459,35 @@ final class Manager {
             focus(id)
         } else if let info = world.monitorInfo(m) {
             history.focused(nil, at: Date())
-            park.park(on: info)
+            // The user's key or click that led here is used up: focus moves
+            // that follow swwm's own desktop click are not the user's.
+            history.input(at: .distantPast)
+            // The click lands under the cursor when that is bare desktop of this
+            // display, else mid work area (where mouse-follows-focus puts it).
+            let area = world.workArea(of: m)
+            let cursor = Displays.cursor
+            let p = area.contains(cursor) && desktopIsOnTop(at: cursor) ? cursor : CGPoint(x: area.midX, y: area.midY)
+            lastWarp = Date()
             if settings.mouseFollowsFocus, !info.frame.contains(Displays.cursor) {
-                lastWarp = Date()
-                CGWarpMouseCursorPosition(CGPoint(x: info.frame.midX, y: info.frame.midY))
+                CGWarpMouseCursorPosition(p)
+            }
+            parkGeneration += 1
+            parkWhenClear(info, at: p, generation: parkGeneration, until: Date().addingTimeInterval(0.5))
+        }
+    }
+
+    /// Windows of the workspace just hidden may still be on screen for a few
+    /// frames: click only once the window server has Finder's desktop on top
+    /// at the spot, or park without a click if it never does.
+    private func parkWhenClear(_ info: MonitorInfo, at p: CGPoint, generation: Int, until deadline: Date) {
+        guard generation == parkGeneration else { return }  // focus went elsewhere meanwhile
+        if desktopIsOnTop(at: p) {
+            park.park(on: info, desktopPoint: p)
+        } else if Date() >= deadline {
+            park.park(on: info, desktopPoint: nil)
+        } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { [weak self] in
+                self?.parkWhenClear(info, at: p, generation: generation, until: deadline)
             }
         }
     }
@@ -773,6 +800,20 @@ final class Manager {
     }
 
     // MARK: - Mouse support
+
+    /// The topmost visible window at `p` is Finder's desktop: a click there is
+    /// a click on the desktop.
+    private func desktopIsOnTop(at p: CGPoint) -> Bool {
+        let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+        guard let top = list.first(where: { info in
+            guard (info[kCGWindowAlpha as String] as? Double ?? 1) > 0,
+                  let dict = info[kCGWindowBounds as String] as? NSDictionary,
+                  let r = CGRect(dictionaryRepresentation: dict) else { return false }
+            return r.contains(p)
+        }) else { return false }
+        return (top[kCGWindowLayer as String] as? Int) == Int(CGWindowLevelForKey(.desktopIconWindow))
+            && (top[kCGWindowOwnerName as String] as? String) == "Finder"
+    }
 
     /// The topmost managed window under `p`, or nil when an unmanaged window is on top.
     func window(at p: CGPoint) -> WindowID? {
