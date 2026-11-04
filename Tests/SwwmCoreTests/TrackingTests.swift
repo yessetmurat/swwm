@@ -42,13 +42,13 @@ private func snap(
 }
 
 private func ctx(
-    tiles: [WindowID: CGRect] = [:],
+    frames: [WindowID: CGRect] = [:],
     child: Bool = false,
     adopting: Bool = false,
     hidden: Bool = false
 ) -> TrackContext {
     TrackContext(
-        appTiles: tiles,
+        appFrames: frames,
         isChild: child,
         adopting: adopting,
         appHidden: hidden,
@@ -116,7 +116,7 @@ private func saved(
     let d = trackDecision(
         snap(listed: [1]),
         world: world([B]),
-        context: ctx(tiles: [7: tile]),
+        context: ctx(frames: [7: tile]),
         remembered: &r,
         saved: nil
     )
@@ -125,8 +125,14 @@ private func saved(
     #expect(r.contains(1))
 }
 
+@Test func replacementOfAnotherSizeIsNoTab() {
+    let small = CGRect(x: 100, y: 100, width: 550, height: 192)
+
+    #expect(decide(snap(listed: [1]), ctx(frames: [7: small])) == .manage(workspace: "1", floating: false))
+}
+
 @Test func listedWindowIsNoCoveredTab() {
-    #expect(decide(snap(listed: [1, 7]), ctx(tiles: [7: tile])) == .manage(workspace: "1", floating: false))
+    #expect(decide(snap(listed: [1, 7]), ctx(frames: [7: tile])) == .manage(workspace: "1", floating: false))
 }
 
 @Test func rememberedWorkspaceComesBack() {

@@ -102,6 +102,14 @@ private func w(
     ) == .moved)
 }
 
+@Test func titleBarIsTheTopBand() {
+    let frame = CGRect(x: 100, y: 50, width: 400, height: 300)
+
+    #expect(inTitleBar(CGPoint(x: 300, y: 60), of: frame))
+    #expect(!inTitleBar(CGPoint(x: 300, y: 200), of: frame))
+    #expect(!inTitleBar(CGPoint(x: 50, y: 60), of: frame))
+}
+
 @Test func doubleClickIsIgnored() {
     let old = CGRect(x: 0, y: 0, width: 400, height: 300)
 

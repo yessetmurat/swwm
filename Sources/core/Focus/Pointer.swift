@@ -32,6 +32,9 @@ public enum NativeChange: Equatable, Sendable {
     case resized(CGSize)  // how far the edge that moved went
 }
 
+/// Whether `p` is in the window's title bar: the top 30pt of `frame`.
+public func inTitleBar(_ p: CGPoint, of frame: CGRect) -> Bool { frame.contains(p) && p.y - frame.minY <= 30 }
+
 /// A title-bar move or an edge resize the user made without swwm, from the
 /// window's frame at the press and after it. Nil for no change, a double
 /// click (zoom), or a press elsewhere (a button that resizes its window).
@@ -45,7 +48,7 @@ public func nativeChange(
         return nil
     }
 
-    let titleBand = old.contains(p) && p.y - old.minY <= 30
+    let titleBand = inTitleBar(p, of: old)
     let onEdge = old.insetBy(dx: -6, dy: -6).contains(p) && !old.insetBy(dx: 6, dy: 6).contains(p)
     if new.size == old.size { return titleBand ? .moved : nil }
     guard onEdge else {

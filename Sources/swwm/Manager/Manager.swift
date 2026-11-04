@@ -37,6 +37,7 @@ final class Manager: AppEvents {
     var opened: [WindowID: CGRect] = [:]                   // where the app opened it, until the size check
     var tilesByKind: [String: Bool] = [:]                  // learned from the first window of each kind
     var settling: Set<WindowID> = []                       // new, until the size check: their own resizes are undone
+    var zooming: [WindowID: Bool] = [:]                    // title-bar double-clicked tiles; true once swwm put one back
     private var savePending = false
     private var lastSaved: Data?                           // what the file holds
     /// Per login session: the temporary directory is cleared on reboot.
@@ -87,8 +88,9 @@ final class Manager: AppEvents {
             return false
         }
 
+        let appWindows = windows.values.filter { $0.pid == s.pid }
         let context = TrackContext(
-            appTiles: tileFrames(of: windows.values.filter { $0.pid == s.pid }.map(\.id)),
+            appFrames: Dictionary(uniqueKeysWithValues: appWindows.map { ($0.id, $0.frame) }),
             isChild: levels.isChild(s.id),
             adopting: adopting,
             appHidden: app.isHidden,
@@ -133,6 +135,7 @@ final class Manager: AppEvents {
         windows[old] = nil
         opened[old] = nil
         if let m = hidden.removeValue(forKey: old) { hidden[w.id] = m }
+        if let z = zooming.removeValue(forKey: old) { zooming[w.id] = z }
         windows[w.id] = ManagedWindow(w)
         WindowServer.watch(Array(windows.keys))
         if focused == old { history.focused(w.id, at: Date()) }
@@ -146,20 +149,15 @@ final class Manager: AppEvents {
     }
 
     /// The tab a closed tab leaves on screen: an unmanaged window of the same
-    /// app in the closed window's place.
+    /// app with the closed window's frame.
     private func nextTab(after id: WindowID, listed: [AppWindow]) -> AppWindow? {
-        guard let r = world.shownFrame(of: id) else {
+        guard let r = windows[id]?.frame else {
             return nil
         }
 
         let candidates = listed.filter { windows[$0.id] == nil && $0.isStandard && !$0.isMinimized }
         let next = tabSibling(of: r, among: Dictionary(uniqueKeysWithValues: candidates.map { ($0.id, $0.frame) }))
         return candidates.first { $0.id == next }
-    }
-
-    /// Where these windows are when shown, for those swwm places.
-    private func tileFrames(of ids: [WindowID]) -> [WindowID: CGRect] {
-        Dictionary(uniqueKeysWithValues: ids.compactMap { id in world.shownFrame(of: id).map { (id, $0) } })
     }
 
     /// Writes where each window is, once per run-loop turn of changes.
@@ -241,6 +239,7 @@ final class Manager: AppEvents {
         needsPlacement.remove(id)
         opened[id] = nil
         settling.remove(id)
+        zooming[id] = nil
 
         guard let m else {
             return
@@ -934,7 +933,12 @@ final class Manager: AppEvents {
     /// still waiting for its app is stale.
     func noteInput(at t: Date, click: Bool) {
         history.input(at: t)
-        if click { focusMovedOn() }
+        guard click else {
+            return
+        }
+
+        focusMovedOn()
+        zooming.removeAll()  // a double click that zoomed nothing is over
     }
 
     /// From what swwm already knows: no AX round-trips, so a hung app cannot

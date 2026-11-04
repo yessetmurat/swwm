@@ -16,20 +16,20 @@ public enum TrackDecision: Equatable, Sendable {
 
 public struct TrackContext: Sendable {
 
-    public var appTiles: [WindowID: CGRect]  // shown frames of the app's managed windows
-    public var isChild: Bool                 // raised by swwm with its app's floating window
-    public var adopting: Bool                // the app was running when swwm started
-    public var appHidden: Bool               // cmd-H: its windows come back when the app unhides
-    public var point: CGPoint                // window centre when adopting, else the cursor
+    public var appFrames: [WindowID: CGRect]  // the app's managed windows, as it last reported them
+    public var isChild: Bool                  // at the floating level by swwm's doing (`FloatingLevels.isChild`)
+    public var adopting: Bool                 // the app was running when swwm started
+    public var appHidden: Bool                // cmd-H: its windows come back when the app unhides
+    public var point: CGPoint                 // window centre when adopting, else the cursor
 
     public init(
-        appTiles: [WindowID: CGRect],
+        appFrames: [WindowID: CGRect],
         isChild: Bool,
         adopting: Bool,
         appHidden: Bool,
         point: CGPoint
     ) {
-        self.appTiles = appTiles
+        self.appFrames = appFrames
         self.isChild = isChild
         self.adopting = adopting
         self.appHidden = appHidden
@@ -62,7 +62,7 @@ public func trackDecision(
         return .skip
     }
 
-    if let old = tabSibling(of: s.frame, among: c.appTiles.filter { !s.listed.contains($0.key) }) { return .takeOver(old) }
+    if let old = tabSibling(of: s.frame, among: c.appFrames.filter { !s.listed.contains($0.key) }) { return .takeOver(old) }
 
     let rule = world.config.rules.first { $0.matches(app: s.app, title: s.title) }
     let back = remembered.take(s.id)

@@ -113,6 +113,43 @@ private func withChild() -> FloatingLevels {
     #expect(l.set(2, pid: 10, floating: false) == [down(2)])
 }
 
+@Test func loweredChildStaysChildUntilApplied() {
+    var l = withChild()
+    let changes = l.gone(1)
+
+    // The window server still shows it raised until the Dock module answers.
+    #expect(l.isChild(2))
+
+    l.applied(changes[0])
+
+    #expect(!l.isChild(2))
+}
+
+@Test func failedLoweringForgetsChild() {
+    var l = withChild()
+    let changes = l.gone(1)
+    l.failed(changes[0])
+
+    #expect(!l.isChild(2))
+}
+
+@Test func adoptedLoweringChildStaysLowWhenTiled() {
+    var l = withChild()
+    _ = l.gone(1)
+    l.adopt(2, pid: 10)
+
+    #expect(!l.isChild(2))
+    #expect(l.set(2, pid: 10, floating: false) == [])
+}
+
+@Test func adoptedLoweringChildGoesUpWhenFloating() {
+    var l = withChild()
+    _ = l.gone(1)
+    l.adopt(2, pid: 10)
+
+    #expect(l.set(2, pid: 10, floating: true) == [up(2)])
+}
+
 @Test func failedChangeIsAskedAgain() {
     var l = FloatingLevels()
     let changes = l.set(1, pid: 10, floating: true)

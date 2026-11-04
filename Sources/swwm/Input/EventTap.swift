@@ -105,6 +105,11 @@ final class EventTap {
                 let clicks = Int(event.getIntegerValueField(.mouseEventClickState))
                 press = type == .leftMouseDown ? s.window(at: p).flatMap { id in s.view.frames[id].map { (id, $0, p, clicks) } } : nil
 
+                // Marked before the app sees the press: macOS may zoom the window on it.
+                if let pr = press, pr.clicks == 2, inTitleBar(p, of: pr.frame) {
+                    DispatchQueue.main.async { [manager] in manager.titleDoubleClicked(pr.window) }
+                }
+
                 return event
             }
 

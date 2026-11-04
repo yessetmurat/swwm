@@ -15,16 +15,9 @@ public func near(_ a: CGRect, _ b: CGRect, tolerance: CGFloat = 1) -> Bool {
 }
 
 /// Native tabs are windows of their own sharing one frame: the tab of
-/// `candidates` that `frame` belongs with is the one it overlaps most, when
-/// that overlap is at least half of the smaller of the two.
+/// `candidates` that `frame` belongs with has that frame. A window that
+/// only overlaps it (Windows App's session window replacing its smaller
+/// connecting window) is no tab.
 public func tabSibling(of frame: CGRect, among candidates: [WindowID: CGRect]) -> WindowID? {
-    func area(_ r: CGRect) -> CGFloat { r.isNull ? 0 : r.width * r.height }
-    let best = candidates.map { (id: $0.key, overlap: area($0.value.intersection(frame)), other: $0.value) }
-        .max { ($0.overlap, $1.id) < ($1.overlap, $0.id) }
-
-    guard let best, best.overlap > 0, best.overlap >= min(area(frame), area(best.other)) / 2 else {
-        return nil
-    }
-
-    return best.id
+    candidates.filter { near($0.value, frame) }.keys.min()
 }

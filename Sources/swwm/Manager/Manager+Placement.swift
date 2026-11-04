@@ -108,14 +108,38 @@ extension Manager {
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.refusalCheck) { [weak self] in self?.floatIfRefused(id) }
     }
 
+    /// A tile the user double-clicked by its title bar: macOS zooms it, and
+    /// each resize that follows puts it back in its tile (`windowResized`).
+    func titleDoubleClicked(_ id: WindowID) {
+        guard let ws = world.workspace(containing: id), ws.tree.contains(id) else {
+            return
+        }
+
+        zooming[id] = false
+    }
+
     /// A settling window whose app gave it another size (its frame just
-    /// reported) gets its tile again. Not while the user drags.
+    /// reported) gets its tile again, not while the user drags. So does a
+    /// zooming one that changed size (a title-bar drag only moves it), until
+    /// it is back in its tile; a frame read before the zoom does not count.
     func windowResized(_ id: WindowID) {
+        guard world.isVisible(id), let w = windows[id], let r = world.shownFrame(of: id) else {
+            return
+        }
+
+        if let putBack = zooming[id] {
+            let resized = !near(CGRect(origin: .zero, size: w.frame.size), CGRect(origin: .zero, size: r.size))
+            if resized {
+                zooming[id] = true
+                setFrame(id, r)
+            } else if putBack, near(w.frame, r) {
+                zooming[id] = nil
+            }
+            return
+        }
+
         guard settling.contains(id),
               !CGEventSource.buttonState(.combinedSessionState, button: .left),
-              world.isVisible(id),
-              let w = windows[id],
-              let r = world.shownFrame(of: id),
               !near(w.frame, r) else {
             return
         }

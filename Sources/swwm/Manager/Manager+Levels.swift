@@ -69,7 +69,12 @@ extension Manager {
         for c in changes {
             log.debug("level \(c.window, privacy: .public) -> \(c.level, privacy: .public)")
             dock.setLevel(c.window, c.level) { [weak self] reply in
-                guard let self, reply != .done else {
+                guard let self else {
+                    return
+                }
+
+                guard reply != .done else {
+                    self.levels.applied(c)
                     return
                 }
 
