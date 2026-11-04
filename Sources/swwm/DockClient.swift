@@ -21,6 +21,9 @@ final class DockClient {
     }
 
     private let queue = DispatchQueue(label: "dev.swwm.dock")
+    // Workaround: the loader injects the payload a few seconds after a Dock
+    // restart and does not tell swwm; swwm asks again at this interval.
+    private static let reachableRetry = 0.5
     private var path: String { (NSTemporaryDirectory() as NSString).appendingPathComponent(DockSocket.name) }
 
     /// Off the main thread; `done` (if given) runs on the main queue.
@@ -66,7 +69,7 @@ final class DockClient {
                     DispatchQueue.main.async(execute: done)
                     return
                 }
-                Thread.sleep(forTimeInterval: 0.5)
+                Thread.sleep(forTimeInterval: Self.reachableRetry)
             }
         }
     }

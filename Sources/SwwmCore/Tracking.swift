@@ -19,12 +19,14 @@ public struct TrackContext: Sendable {
     public var appTiles: [WindowID: CGRect]  // shown frames of the app's managed windows
     public var isChild: Bool                 // raised by swwm with its app's floating window
     public var adopting: Bool                // the app was running when swwm started
+    public var appHidden: Bool               // cmd-H: its windows come back when the app unhides
     public var point: CGPoint                // window centre when adopting, else the cursor
 
-    public init(appTiles: [WindowID: CGRect], isChild: Bool, adopting: Bool, point: CGPoint) {
+    public init(appTiles: [WindowID: CGRect], isChild: Bool, adopting: Bool, appHidden: Bool, point: CGPoint) {
         self.appTiles = appTiles
         self.isChild = isChild
         self.adopting = adopting
+        self.appHidden = appHidden
         self.point = point
     }
 }
@@ -40,7 +42,8 @@ public func trackDecision(_ s: AppWindow, world: World, context c: TrackContext,
                           remembered: inout Remembered, saved: SavedWorkspaces?) -> TrackDecision {
     // A floating window a crashed run left at the floating level is swwm's, not an app's panel.
     let raisedLastRun = s.layer == Int(WindowLevel.floating) && saved?.wasFloating(s.id, pid: s.pid) == true
-    guard s.isStandard, s.layer == 0 || c.isChild || (c.adopting && raisedLastRun), !s.isFullScreen, !s.isMinimized else {
+    guard !c.appHidden, s.isStandard, s.layer == 0 || c.isChild || (c.adopting && raisedLastRun), !s.isFullScreen,
+          !s.isMinimized else {
         return .skip
     }
     if let old = tabSibling(of: s.frame, among: c.appTiles.filter { !s.listed.contains($0.key) }) { return .takeOver(old) }

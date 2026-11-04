@@ -54,6 +54,9 @@ final class Manager: AppEvents {
     private var pendingPark: (info: MonitorInfo, points: [CGPoint], generation: Int)?
     private var leaving: Set<WindowID> = []                // hidden by swwm, until the window server has moved them
     private var pendingFocus: [MonitorID: DispatchWorkItem] = [:]
+    // Workaround: after a close macOS activates some other app, with no event
+    // saying it is done; swwm puts focus back after it.
+    private static let refocusWait = 0.05
 
     init(world: World) {
         self.world = world
@@ -80,9 +83,9 @@ final class Manager: AppEvents {
     /// ran when swwm started, so the last run's saved state applies to it.
     @discardableResult
     func track(_ s: AppWindow, adopting: Bool) -> Bool {
-        guard windows[s.id] == nil, NSRunningApplication(processIdentifier: s.pid)?.isManageable == true else { return false }
+        guard windows[s.id] == nil, let app = NSRunningApplication(processIdentifier: s.pid), app.isManageable else { return false }
         let context = TrackContext(appTiles: tileFrames(of: windows.values.filter { $0.pid == s.pid }.map(\.id)),
-                                   isChild: levels.isChild(s.id), adopting: adopting,
+                                   isChild: levels.isChild(s.id), adopting: adopting, appHidden: app.isHidden,
                                    point: adopting ? CGPoint(x: s.frame.midX, y: s.frame.midY) : Displays.cursor)
         switch trackDecision(s, world: world, context: context, remembered: &remembered, saved: saved) {
         case .skip:
@@ -379,7 +382,7 @@ final class Manager: AppEvents {
             self?.focus(monitor: m)
         }
         pendingFocus[m] = item
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: item)
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.refocusWait, execute: item)
     }
 
     /// Records focus changes made outside swwm (clicks, app switches).
@@ -627,7 +630,9 @@ final class Manager: AppEvents {
     func windowAppeared(_ w: AppWindow) { windowCreated(w) }
 
     func focusChanged(_ w: AppWindow?, pid: pid_t) {
-        if let w { windowFocusChanged(w) } else { noFocusedWindow() }
+        if let w { return windowFocusChanged(w) }
+        // A background app closing its last window says nothing about focus.
+        if focusReportIsFocus(from: pid, frontmost: NSWorkspace.shared.frontmostApplication?.processIdentifier) { noFocusedWindow() }
     }
 
     /// The app did not take a write: the window stays where it was, so a

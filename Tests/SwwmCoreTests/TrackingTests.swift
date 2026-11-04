@@ -19,8 +19,8 @@ private func snap(_ id: WindowID = 1, pid: Int32 = 10, app: String = "App", titl
                    listed: listed)
 }
 
-private func ctx(tiles: [WindowID: CGRect] = [:], child: Bool = false, adopting: Bool = false) -> TrackContext {
-    TrackContext(appTiles: tiles, isChild: child, adopting: adopting, point: CGPoint(x: 100, y: 100))
+private func ctx(tiles: [WindowID: CGRect] = [:], child: Bool = false, adopting: Bool = false, hidden: Bool = false) -> TrackContext {
+    TrackContext(appTiles: tiles, isChild: child, adopting: adopting, appHidden: hidden, point: CGPoint(x: 100, y: 100))
 }
 
 private func decide(_ s: AppWindow, _ c: TrackContext = ctx(), world w: World = world([B]),
@@ -112,4 +112,9 @@ private func saved(_ id: WindowID, pid: Int32, workspace: String, floating: Bool
 @Test func savedFloatingIgnoredWhenNotAdopting() {
     let s = saved(1, pid: 10, workspace: "1", floating: true)
     #expect(decide(snap(), ctx(adopting: false), saved: s) == .manage(workspace: "1", floating: false))
+}
+
+@Test func hiddenAppWindowsAreSkipped() {
+    // AX still lists a hidden app's windows (a rescan after unlock).
+    #expect(decide(snap(), ctx(hidden: true)) == .skip)
 }

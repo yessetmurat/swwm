@@ -18,6 +18,8 @@ public struct FocusHistory {
     private var lastInput = Date.distantPast
 
     /// How long a window that lost focus still counts as focused.
+    // Workaround: macOS activates a fallback app around a close (on cmd-q even
+    // before the quit is reported) and posts no event saying it is done.
     public static let grace: TimeInterval = 0.3
 
     public init() {}

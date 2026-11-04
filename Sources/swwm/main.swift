@@ -21,6 +21,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var signals: [DispatchSourceSignal] = []
     private var displayChange: DispatchWorkItem?
     private var dockWatch: NSKeyValueObservation?
+    // Workaround: a display change posts a burst of screen-parameter
+    // notifications and no "done" one; swwm acts once the burst is over.
+    private static let displayChangeSettle = 0.5
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Up before the Accessibility wait, so the CLI and a second launch see swwm.
@@ -115,7 +118,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 bar.rebuild()
             }
             self?.displayChange = item
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: item)
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.displayChangeSettle, execute: item)
         }
 
         for sig in [SIGINT, SIGTERM] {
