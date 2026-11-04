@@ -138,12 +138,16 @@ final class EventTap {
 
     /// The window was moved by its title bar or resized by an edge without
     /// swwm: fold that into the layout instead of leaving it out of place.
+    /// The frame comes fresh from the app: its last moved event may still be
+    /// on the way.
     private func nativeDragEnded(_ id: WindowID, from old: CGRect, pressedAt start: CGPoint, clicks: Int, at p: CGPoint) {
-        guard let new = manager.frame(of: id) else { return }
-        switch nativeChange(from: old, to: new, pressedAt: start, clickCount: clicks) {
-        case .moved?: manager.dropped(id, at: p)
-        case .resized(let delta)?: manager.resized(id, by: delta)
-        case nil: break
+        manager.readFrame(id) { [manager] new in
+            guard let new else { return }
+            switch nativeChange(from: old, to: new, pressedAt: start, clickCount: clicks) {
+            case .moved?: manager.dropped(id, at: p)
+            case .resized(let delta)?: manager.resized(id, by: delta)
+            case nil: break
+            }
         }
     }
 

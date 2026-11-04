@@ -11,7 +11,7 @@ import SwwmCore
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var manager: Manager?
-    private var observer: AppObserver?
+    private var connections: Connections?
     private var tap: EventTap?
     private var bar: BarController?
     private var status: SystemStatus?
@@ -51,7 +51,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let config = loader.load()
         let manager = Manager(world: World(config: config))
         let tap = EventTap(manager: manager)
-        let observer = AppObserver(manager: manager)
+        let connections = Connections(manager: manager)
+        manager.connections = connections
         let bar = BarController(manager: manager)
         apply = { config in
             manager.world.apply(config: config)
@@ -77,7 +78,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         tap.update(config: config)
         WindowServer.start {
             manager.serverEvent($0)
-            observer.serverEvent($0)
+            connections.serverEvent($0)
         }
         manager.start()
         bar.rebuild()
@@ -96,10 +97,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        observer.start()
+        connections.start()
         tap.start()
         loader.start()
-        (self.manager, self.tap, self.observer, self.loader, self.bar) = (manager, tap, observer, loader, bar)
+        (self.manager, self.tap, self.connections, self.loader, self.bar) = (manager, tap, connections, loader, bar)
 
         NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main

@@ -40,6 +40,9 @@ public struct SavedWorkspaces: Codable, Equatable, Sendable {
         entry(window, pid)?.workspace
     }
 
+    /// The tile layout of a workspace as the last run left it.
+    public func shape(of workspace: String) -> DwindleTree.Shape? { trees?[workspace] }
+
     public func wasFloating(_ window: WindowID, pid: Int32) -> Bool {
         entry(window, pid)?.floating == true
     }
@@ -70,6 +73,11 @@ extension World {
     /// once the windows are added.
     public func restore(_ saved: SavedWorkspaces) {
         for (name, shape) in saved.trees ?? [:] { workspace(named: name)?.tree.restore(shape) }
+        restoreActive(saved)
+    }
+
+    /// Shows the workspaces the last run showed.
+    public func restoreActive(_ saved: SavedWorkspaces) {
         for name in saved.active ?? [] where workspace(named: name) != nil { show(name) }
     }
 }

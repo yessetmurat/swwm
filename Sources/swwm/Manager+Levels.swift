@@ -40,8 +40,9 @@ extension Manager {
             send(levels.gone(id))
         case .moved(let id):
             windowMoved(id)
+            refreshFrame(id)
         case .resized(let id):
-            windowResized(id)
+            refreshFrame(id)
         }
     }
 

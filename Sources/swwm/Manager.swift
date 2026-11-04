@@ -13,17 +13,21 @@ let log = Logger(subsystem: "dev.swwm.swwm", category: "events")
 
 /// Applies the World to real windows and turns events and commands into
 /// World changes.
-final class Manager {
+final class Manager: AppEvents {
 
     let world: World
     var onReload: () -> String? = { nil }               // error message when the config is not applied
     var onQuit: () -> Void = {}
     var onChange: () -> Void = {}                         // something the bar shows may have changed
 
-    private(set) var windows: [WindowID: AXWindow] = [:]
+    private(set) var windows: [WindowID: ManagedWindow] = [:]
+    weak var connections: Connections?
     private var hidden: [WindowID: MonitorID] = [:]      // window -> display it is hidden on
     private var needsPlacement: Set<WindowID> = []         // the next layout moves these even where they look placed
-    private var titles: [WindowID: String] = [:]           // cached for queries, kept by kAXTitleChanged
+    private var startPids: Set<pid_t> = []                 // apps running when swwm started
+    private var joinedPids: Set<pid_t> = []                // of those, the ones that reported their windows
+    private var touched: Set<String> = []                  // workspaces whose tiles changed since start
+    private(set) var finderHasDesktop = true               // Finder lists a desktop (`CreateDesktop` not off)
     let dock = DockClient()
     var dockModuleInstalled = false                        // set at start from DockModuleInstaller.isInstalled
     private var shadowNoticeShown = false
@@ -59,91 +63,60 @@ final class Manager {
     func start() {
         world.updateMonitors(Displays.current())
         saved = (try? Data(contentsOf: Self.savedFile)).flatMap { try? JSONDecoder().decode(SavedWorkspaces.self, from: $0) }
-        for app in NSWorkspace.shared.runningApplications where app.isManageable {
-            adopt(app)
-        }
-        if let saved { world.restore(saved) }
+        // The windows join as their apps report them (`appWindows`).
+        if let saved { world.restoreActive(saved) }
         layoutAll()
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.startRefusalCheck) { [weak self] in
-            for id in self?.windows.keys.map({ $0 }) ?? [] { self?.floatIfRefused(id) }
-        }
-        applyShadowAll()
-        applyLevelAll()
-        if let app = NSWorkspace.shared.frontmostApplication { appActivated(app) }
     }
 
-    func adopt(_ app: NSRunningApplication) {
-        for w in AXWindow.windows(of: app) {
-            let f = w.frame
-            track(w, near: CGPoint(x: f.midX, y: f.midY), adopting: true)
-        }
-    }
+    /// The apps running at start: their windows get the last run's places.
+    func startApps(_ pids: Set<pid_t>) { startPids = pids }
 
-    /// Adds a window to the World: to its rule's workspace, else to the
-    /// active workspace of the display at `point`. Dialogs, sheets and
-    /// fullscreen windows are not managed.
+    private var pendingStart: Set<pid_t> { startPids.subtracting(joinedPids) }
+
+    /// Adds a window to the World as `trackDecision` says. `adopting`: its app
+    /// ran when swwm started, so the last run's saved state applies to it.
     @discardableResult
-    /// `adopting`: found at start, so the last run's saved state applies to it.
-    /// `facts`: read already (on the AX thread); nil reads them here.
-    func track(_ w: AXWindow, facts: WindowFacts? = nil, near point: CGPoint, adopting: Bool = false) -> Bool {
-        guard windows[w.id] == nil, NSRunningApplication(processIdentifier: w.pid)?.isManageable == true else { return false }
-        let facts = facts ?? WindowFacts(w)
-        let level = w.level
-        guard facts.isStandard, level == 0 || levels.isChild(w.id) || (adopting && raisedLastRun(w)),
-              !facts.isFullScreen, !facts.isMinimized else {
-            log.debug("skip \(w.id, privacy: .public) \(w.appName, privacy: .public) role=\(facts.role ?? "-", privacy: .public) sub=\(facts.subrole ?? "-", privacy: .public) level=\(level, privacy: .public) full=\(facts.isFullScreen, privacy: .public) min=\(facts.isMinimized, privacy: .public)")
+    func track(_ r: Reported, adopting: Bool) -> Bool {
+        let s = r.window
+        guard windows[s.id] == nil, NSRunningApplication(processIdentifier: s.pid)?.isManageable == true else { return false }
+        let context = TrackContext(appTiles: tileFrames(of: windows.values.filter { $0.pid == s.pid }.map(\.id)),
+                                   isChild: levels.isChild(s.id), adopting: adopting,
+                                   point: adopting ? CGPoint(x: s.frame.midX, y: s.frame.midY) : Displays.cursor)
+        switch trackDecision(s, world: world, context: context, remembered: &remembered, saved: saved) {
+        case .skip:
+            log.debug("skip \(s.id, privacy: .public) \(s.app, privacy: .public) role=\(s.role ?? "-", privacy: .public) sub=\(s.subrole ?? "-", privacy: .public) level=\(s.layer, privacy: .public) full=\(s.isFullScreen, privacy: .public) min=\(s.isMinimized, privacy: .public)")
             return false
+        case .takeOver(let old):
+            // Raised before its app reported it, as an app's windows are while the
+            // app has a floating one: from now on its own floating state decides.
+            levels.adopt(s.id, pid: s.pid)
+            takeOver(old, by: r)
+            return true
+        case .manage(let target, let floating):
+            levels.adopt(s.id, pid: s.pid)
+            windows[s.id] = ManagedWindow(r)
+            WindowServer.watch(Array(windows.keys))
+            opened[s.id] = s.frame
+            world.add(s.id, to: target, floatingFrame: floating ? s.frame : nil)
+            if !adopting { touched.insert(target) }
+            applyShadow(s.id)
+            applyLevel(s.id)
+            return true
         }
-        // Raised before its app reported it, as an app's windows are while the
-        // app has a floating one: from now on its own floating state decides.
-        levels.adopt(w.id, pid: w.pid)
-        // A new or newly shown native tab takes the tile of the tab it covers,
-        // which drops out of the app's window list. No tab bar check: when a
-        // tab closes, the next one is reported before the close, already alone.
-        if let app = NSRunningApplication(processIdentifier: w.pid) {
-            let listed = Set(AXWindow.windows(of: app).map(\.id))
-            let covered = windows.values.filter { $0.pid == w.pid && !listed.contains($0.id) }
-            if let old = tabSibling(of: w.frame, among: tileFrames(of: covered.map(\.id))) {
-                takeOver(old, by: w)
-                return true
-            }
-        }
-        let rule = world.config.rules.first { $0.matches(app: w.appName, title: w.title) }
-        let back = remembered.take(w.id)
-        let floats = rule?.float == true || !w.isResizable || back?.floating == true
-            || (adopting && saved?.wasFloating(w.id, pid: w.pid) == true)
-        let frame = w.frame
-        // A workspace a config reload dropped meanwhile is no place to come back to.
-        let target = back.flatMap { world.workspace(named: $0.workspace)?.name }
-            ?? saved?.workspace(of: w.id, pid: w.pid).flatMap { world.workspace(named: $0)?.name }
-            ?? rule?.workspace
-            ?? world.monitor(at: point).flatMap(world.activeWorkspace(on:))
-        guard let target else { return false }
-        windows[w.id] = w
-        WindowServer.watch(Array(windows.keys))
-        titles[w.id] = w.title
-        opened[w.id] = frame
-        AppObserver.current?.watch(w)  // windows first seen on a focus change are not watched yet
-        world.add(w.id, to: target, floatingFrame: floats ? frame : nil)
-        applyShadow(w.id)
-        applyLevel(w.id)
-        return true
     }
 
     /// Native tabs are windows of their own and only the shown one is listed:
     /// a tile follows the shown tab of its group.
-    private func takeOver(_ old: WindowID, by w: AXWindow) {
+    private func takeOver(_ old: WindowID, by r: Reported) {
+        let w = r.window
         log.debug("tab \(w.id, privacy: .public) takes over \(old, privacy: .public)")
         world.replace(old, with: w.id)
         windows[old] = nil
-        titles[old] = nil
         opened[old] = nil
         if let m = hidden.removeValue(forKey: old) { hidden[w.id] = m }
-        windows[w.id] = w
+        windows[w.id] = ManagedWindow(r)
         WindowServer.watch(Array(windows.keys))
-        titles[w.id] = w.title
         if focused == old { history.focused(w.id, at: Date()) }
-        AppObserver.current?.watch(w)
         applyShadow(w.id)
         send(levels.set(old, pid: w.pid, floating: false))  // the tab left behind
         applyLevel(w.id)
@@ -153,12 +126,11 @@ final class Manager {
 
     /// The tab a closed tab leaves on screen: an unmanaged window of the same
     /// app in the closed window's place.
-    private func nextTab(after id: WindowID) -> AXWindow? {
-        guard let w = windows[id], let app = NSRunningApplication(processIdentifier: w.pid),
-              let r = world.shownFrame(of: id) else { return nil }
-        let candidates = AXWindow.windows(of: app).filter { windows[$0.id] == nil && $0.isStandard && !$0.isMinimized }
-        let next = tabSibling(of: r, among: Dictionary(uniqueKeysWithValues: candidates.map { ($0.id, $0.frame) }))
-        return candidates.first { $0.id == next }
+    private func nextTab(after id: WindowID, listed: [Reported]) -> Reported? {
+        guard let r = world.shownFrame(of: id) else { return nil }
+        let candidates = listed.filter { windows[$0.window.id] == nil && $0.window.isStandard && !$0.window.isMinimized }
+        let next = tabSibling(of: r, among: Dictionary(uniqueKeysWithValues: candidates.map { ($0.window.id, $0.window.frame) }))
+        return candidates.first { $0.window.id == next }
     }
 
     /// Where these windows are when shown, for those swwm places.
@@ -172,15 +144,14 @@ final class Manager {
         savePending = true
         DispatchQueue.main.async { [self] in
             savePending = false
-            let s = SavedWorkspaces(world: world, pids: windows.mapValues(\.pid))
+            var s = SavedWorkspaces(world: world, pids: windows.mapValues(\.pid))
+            // Apps still starting keep their places from the last run.
+            if let saved, !pendingStart.isEmpty {
+                s = s.merging(saved, pending: Set(pendingStart.map { Int32($0) }),
+                              untouched: Set(world.workspaceNames).subtracting(touched))
+            }
             try? JSONEncoder().encode(s).write(to: Self.savedFile, options: .atomic)
         }
-    }
-
-    /// A floating window a crashed run left at the floating level: it is swwm's,
-    /// not an app's panel.
-    private func raisedLastRun(_ w: AXWindow) -> Bool {
-        w.level == Int(WindowLevel.floating) && saved?.wasFloating(w.id, pid: w.pid) == true
     }
 
     /// Sets a window's shadow to what `window-shadow` wants, if anything.
@@ -207,7 +178,7 @@ final class Manager {
             remembered.remember(id, .init(workspace: ws.name, pid: w.pid, floating: ws.floating[id] != nil))
             // A hidden app's window parked off-screen must come back on screen
             // when the app unhides, even if swwm is gone by then.
-            if hidden[id] != nil, let r = world.shownFrame(of: id) { w.setFrame(r) }
+            if hidden[id] != nil, let r = world.shownFrame(of: id) { w.ax.setFrame(r) }
         }
         // Minimized or hidden it lives on: back to the normal level, so it is
         // managed again when it returns.
@@ -218,7 +189,6 @@ final class Manager {
         let m = world.remove(id)
         windows[id] = nil
         WindowServer.watch(Array(windows.keys))
-        titles[id] = nil
         hidden[id] = nil
         leaving.remove(id)
         needsPlacement.remove(id)
@@ -252,7 +222,7 @@ final class Manager {
                 // placed for an old display arrangement.
                 let stale = needsPlacement.remove(id) != nil
                 if hidden[id] == nil, !stale, other.floating[id] != nil { other.floating[id] = w.frame }
-                if w.setPosition(hiddenOrigin(for: w.frame.size, on: info, others: others)) { leaving.insert(id) }
+                if w.ax.setPosition(hiddenOrigin(for: w.frame.size, on: info, others: others)) { leaving.insert(id) }
                 hidden[id] = m
             }
         }
@@ -260,7 +230,7 @@ final class Manager {
         let area = world.workArea(of: m)
         leaving.subtract(ws.windows)  // shown again before their moved event came
         for (id, r) in ws.tree.frames(in: area, gap: settings.gap) where id != ws.zoomed {
-            windows[id]?.setFrame(r)
+            windows[id]?.ax.setFrame(r)
             hidden[id] = nil
             needsPlacement.remove(id)
         }
@@ -268,10 +238,10 @@ final class Manager {
             let frame = shownFloatingFrame(r, on: info, area: area)
             guard hidden[id] != nil || needsPlacement.remove(id) != nil || frame != r else { continue }
             ws.floating[id] = frame
-            windows[id]?.setFrame(frame)
+            windows[id]?.ax.setFrame(frame)
             hidden[id] = nil
         }
-        if let z = ws.zoomed, let w = windows[z] {
+        if let z = ws.zoomed, let w = windows[z]?.ax {
             w.setFrame(area)
             w.raise()
             hidden[z] = nil
@@ -283,7 +253,7 @@ final class Manager {
     func restoreAll() {
         for id in hidden.keys {
             // Nil when its display is gone already (quit during a display change).
-            if let w = windows[id], let r = world.shownFrame(of: id) { w.setFrame(r) }
+            if let w = windows[id], let r = world.shownFrame(of: id) { w.ax.setFrame(r) }
         }
         hidden = [:]
         if settings.windowShadow != .on {
@@ -318,7 +288,7 @@ final class Manager {
         guard let w = windows[id] else { return }
         parkGeneration += 1
         park.clear()
-        w.focus()
+        w.ax.focus()
         history.focused(id, at: Date())
         world.noteFocused(id)
         guard warp, settings.mouseFollowsFocus else { return }
@@ -373,7 +343,7 @@ final class Manager {
             case .click:
                 pendingPark = nil
                 lastCursorMove = Date()  // the click puts the cursor there
-                park.park(on: pending.info, desktopPoint: p)
+                park.park(on: pending.info, desktopPoint: finderHasDesktop ? p : nil)
                 return
             case .wait:
                 return
@@ -445,16 +415,6 @@ final class Manager {
         }
     }
 
-    /// The focused window of the app now frontmost; read here, at start only.
-    /// Later activations come from the AX thread as `windowFocusChanged`.
-    func appActivated(_ app: NSRunningApplication) {
-        log.debug("appActivated \(app.localizedName ?? "?", privacy: .public)")
-        let el = AXUIElementCreateApplication(app.processIdentifier)
-        guard let win: AXUIElement = el.attribute(kAXFocusedWindowAttribute),
-              let w = AXWindow(win, app: app) else { return noFocusedWindow() }
-        windowFocusChanged(w, facts: WindowFacts(w))
-    }
-
     /// The app now frontmost has no focused window.
     func noFocusedWindow() {
         focusInUnmanagedWindow = false
@@ -462,8 +422,10 @@ final class Manager {
 
     /// A focus change reported by an app. A window that was not manageable
     /// when it appeared (fullscreen, subrole not ready yet) gets another try.
-    func windowFocusChanged(_ w: AXWindow, facts: WindowFacts) {
-        if windows[w.id] == nil { windowCreated(w, facts: facts) }
+    func windowFocusChanged(_ r: Reported) {
+        let w = r.window
+        // An app still starting reports its windows first, with their last places.
+        if windows[w.id] == nil, !pendingStart.contains(w.pid) { windowCreated(r) }
         focusInUnmanagedWindow = windows[w.id] == nil
         // Focus moved to a window swwm does not manage on another display:
         // the parked display no longer has the keyboard.
@@ -483,11 +445,13 @@ final class Manager {
         case .swap(let d):
             guard let f = focused, let ws = world.workspace(containing: f),
                   let n = neighborOfFocused(d, tiledOnly: true) else { return }
+            touched.insert(ws.name)
             ws.tree.swap(f, n)
             relayout(f)
         case .warp(let d):
             guard let f = focused, let ws = world.workspace(containing: f),
                   let n = neighborOfFocused(d, tiledOnly: true) else { return }
+            touched.insert(ws.name)
             ws.tree.warp(f, onto: n, from: opposite(d))
             relayout(f)
         case .focusMonitor(let d):
@@ -510,11 +474,13 @@ final class Manager {
             relayout(f)
         case .balance:
             guard let f = focused, let ws = world.workspace(containing: f) else { return }
+            touched.insert(ws.name)
             ws.tree.balance()
             relayout(f)
         case .mirror(let axis):
             guard let f = focused, let ws = world.workspace(containing: f),
                   let m = world.monitor(of: ws.name) else { return }
+            touched.insert(ws.name)
             ws.tree.mirror(axis, in: world.workArea(of: m))
             layout(m)
         case .exec(let line):
@@ -543,6 +509,7 @@ final class Manager {
         guard let from = world.workspace(containing: id), from.name != name,
               let fromMonitor = world.monitor(of: from.name) else { return }
         world.move(id, to: name)
+        touched.formUnion([from.name, name])
         if let ws = world.workspace(named: name), let f = ws.floating[id],
            let m = world.monitor(of: name), m != fromMonitor {
             // A floating window keeps its size and lands centered on the new display.
@@ -561,6 +528,7 @@ final class Manager {
     private func toggleFloat() {
         guard let f = focused, let ws = world.workspace(containing: f), let m = world.monitor(of: ws.name) else { return }
         let wasFloating = ws.floating[f] != nil
+        touched.insert(ws.name)
         world.remove(f)
         if wasFloating {
             world.add(f, to: ws.name, floatingFrame: nil)
@@ -568,8 +536,8 @@ final class Manager {
             let a = world.workArea(of: m)
             let frame = a.insetBy(dx: a.width / 4, dy: a.height / 4)
             world.add(f, to: ws.name, floatingFrame: frame)
-            windows[f]?.setFrame(frame)
-            windows[f]?.raise()
+            windows[f]?.ax.setFrame(frame)
+            windows[f]?.ax.raise()
         }
         layout(m)
         applyShadow(f)
@@ -605,8 +573,8 @@ final class Manager {
 
     // MARK: - Events
 
-    func windowGone(_ id: WindowID) {
-        if let next = nextTab(after: id) { takeOver(id, by: next) } else { untrack(id, remember: false) }
+    func windowGone(_ id: WindowID, listed: [Reported]) {
+        if let next = nextTab(after: id, listed: listed) { takeOver(id, by: next) } else { untrack(id, remember: false) }
     }
 
     func windowMinimized(_ id: WindowID) { untrack(id, remember: true) }
@@ -620,11 +588,53 @@ final class Manager {
         log.debug("appTerminated \(pid, privacy: .public)")
         for (id, w) in windows where w.pid == pid { untrack(id, remember: false) }
         remembered.forget(pid: pid)
+        startPids.remove(pid)
     }
 
-    /// An app's windows, listed on the AX thread; known ones are skipped.
-    func rescan(_ found: [(window: AXWindow, facts: WindowFacts)]) {
-        for f in found { windowCreated(f.window, facts: f.facts) }
+    /// An app's windows: on connecting (`adopting` for an app that ran when
+    /// swwm started) and on unhide. Known ones are skipped.
+    func appWindows(_ found: [Reported], pid: pid_t, adopting: Bool) {
+        if NSRunningApplication(processIdentifier: pid)?.bundleIdentifier == "com.apple.finder" {
+            finderHasDesktop = found.contains { $0.window.isFinderDesktop }
+        }
+        guard adopting else { return found.forEach(windowCreated) }
+        joinedPids.insert(pid)
+        var shown: Set<MonitorID> = []
+        for r in found where track(r, adopting: true) {
+            guard let ws = world.workspace(containing: r.window.id), let m = world.monitor(of: ws.name) else { continue }
+            // Its workspace's tiles as the last run left them, while nobody changed them since.
+            if !touched.contains(ws.name), let shape = saved?.shape(of: ws.name) { ws.tree.restore(shape) }
+            shown.insert(m)
+        }
+        shown.forEach(layout)
+        let adopted = found.map(\.window.id).filter { windows[$0] != nil }
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.startRefusalCheck) { [weak self] in
+            for id in adopted { self?.floatIfRefused(id) }
+        }
+        if NSWorkspace.shared.frontmostApplication?.processIdentifier == pid { connections?.connection(pid)?.readFocus() }
+    }
+
+    func windowAppeared(_ r: Reported) { windowCreated(r) }
+
+    func focusChanged(_ r: Reported?, pid: pid_t) {
+        if let r { windowFocusChanged(r) } else { noFocusedWindow() }
+    }
+
+    /// The window's frame as its app has it now, for decisions made after
+    /// something moved it; `reply` runs on main.
+    func readFrame(_ id: WindowID, reply: @escaping (CGRect?) -> Void) {
+        guard let w = windows[id], let c = connections?.connection(w.pid) else { return reply(nil) }
+        c.readFrame(id) { [weak self] f in
+            if let f { self?.windows[id]?.frame = f }
+            reply(f)
+        }
+    }
+
+    /// The window server moved or resized a managed window: learn its frame;
+    /// one still settling that its app resized gets its tile back.
+    func refreshFrame(_ id: WindowID) {
+        guard windows[id] != nil else { return }
+        readFrame(id) { [weak self] _ in self?.windowResized(id) }
     }
 
     // MARK: - Mouse support
@@ -642,9 +652,9 @@ final class Manager {
     /// must not pull focus away from it. Kept from the focus reports.
     private(set) var focusInUnmanagedWindow = false
 
-    func setFrame(_ id: WindowID, _ r: CGRect) { windows[id]?.setFrame(r) }
+    func setFrame(_ id: WindowID, _ r: CGRect) { windows[id]?.ax.setFrame(r) }
 
-    func appName(of id: WindowID) -> String? { windows[id]?.appName }
+    func appName(of id: WindowID) -> String? { windows[id]?.app }
 
     func pid(of id: WindowID) -> pid_t? { windows[id]?.pid }
 
@@ -655,12 +665,12 @@ final class Manager {
     /// stall a query (and the event tap on the main thread).
     func windowInfo(_ id: WindowID) -> WindowInfo? {
         windows[id].map {
-            WindowInfo(app: $0.appName, title: titles[id] ?? "", frame: world.shownFrame(of: id) ?? .zero)
+            WindowInfo(app: $0.app, title: $0.title, frame: world.shownFrame(of: id) ?? .zero)
         }
     }
 
     func titleChanged(_ id: WindowID, _ title: String) {
-        if windows[id] != nil { titles[id] = title }
+        windows[id]?.title = title
     }
 
     /// A CLI request. `quit` answers first and quits on the next turn, so the
@@ -687,8 +697,9 @@ final class Manager {
         }
     }
 
-    func setPosition(_ id: WindowID, _ p: CGPoint) { windows[id]?.setPosition(p) }
+    func setPosition(_ id: WindowID, _ p: CGPoint) { windows[id]?.ax.setPosition(p) }
 
+    /// The last frame its app reported.
     func frame(of id: WindowID) -> CGRect? { windows[id]?.frame }
 
     /// Ends a modifier+left drag: a tiled window dropped on another tiled
@@ -697,9 +708,10 @@ final class Manager {
     func dropped(_ id: WindowID, at p: CGPoint) {
         guard let ws = world.workspace(containing: id), let from = world.monitor(of: ws.name) else { return }
         if ws.floating[id] != nil {
-            ws.floating[id] = windows[id]?.frame
+            readFrame(id) { f in if let f, ws.floating[id] != nil { ws.floating[id] = f } }
             return
         }
+        touched.insert(ws.name)
         if let to = world.monitor(at: p), to != from, let target = world.activeWorkspace(on: to) {
             world.move(id, to: target)
             layout(from)
@@ -717,9 +729,10 @@ final class Manager {
     func resized(_ id: WindowID, by delta: CGSize) {
         guard let ws = world.workspace(containing: id), let m = world.monitor(of: ws.name) else { return }
         if ws.floating[id] != nil {
-            ws.floating[id] = windows[id]?.frame
+            readFrame(id) { f in if let f, ws.floating[id] != nil { ws.floating[id] = f } }
             return
         }
+        touched.insert(ws.name)
         ws.tree.resize(id, by: delta, in: world.workArea(of: m), gap: settings.gap)
         layout(m)
     }
@@ -730,4 +743,31 @@ final class Manager {
         guard let ws = world.workspace(containing: id) else { return nil }
         return ws.tree.windows.first { $0 != id && world.shownFrame(of: $0)?.contains(p) == true }
     }
+}
+
+/// A window swwm manages, as its app last reported it.
+struct ManagedWindow {
+
+    let id: WindowID
+    let pid: pid_t
+    let app: String
+    let kind: String          // windows of one kind tile or float alike
+    var title: String
+    var frame: CGRect
+    let element: AXUIElement  // writes still go through it on main
+
+    init(_ r: Reported) {
+        let w = r.window
+        id = w.id
+        pid = w.pid
+        app = w.app
+        // The full-screen button tells an app's main windows from its panels
+        // (Finder's browser windows from its Info windows).
+        kind = "\(w.app)|\(w.hasFullScreenButton)"
+        title = w.title
+        frame = w.frame
+        element = r.element
+    }
+
+    var ax: AXWindow { AXWindow(element: element, pid: pid, id: id, appName: app) }
 }

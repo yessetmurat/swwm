@@ -130,6 +130,9 @@ public final class World {
 
     public func workspaces(on m: MonitorID) -> [String] { order.filter { home[$0] == m } }
 
+    /// Every workspace, in config order.
+    public var workspaceNames: [String] { order }
+
     public func activeWorkspace(on m: MonitorID) -> String? {
         guard monitors.contains(where: { $0.id == m }) else { return nil }
         return active[m]
