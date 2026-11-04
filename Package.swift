@@ -11,7 +11,7 @@ let package = Package(
         .package(url: "https://github.com/LebJe/TOMLKit", from: "0.6.0"),
     ],
     targets: [
-        .target(name: "SwwmCore", dependencies: ["TOMLKit"]),
+        .target(name: "SwwmCore", dependencies: ["TOMLKit"], path: "Sources/core"),
         .executableTarget(
             name: "swwm",
             dependencies: ["SwwmCore"],
