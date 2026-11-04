@@ -9,61 +9,6 @@ import AppKit
 import ApplicationServices
 import SwwmCore
 
-/// A thread with its own run loop for the Accessibility observers. It only
-/// routes notifications to the app connections; it never waits on an app.
-final class AXThread {
-
-    private var runLoop: CFRunLoop?
-
-    init() {
-        let ready = DispatchSemaphore(value: 0)
-        let thread = Thread { [self] in
-            runLoop = CFRunLoopGetCurrent()
-            // A run loop with no source returns at once: keep a port in it.
-            let keep = CFMachPortCreate(nil, { _, _, _, _ in }, nil, nil)
-            CFRunLoopAddSource(runLoop, CFMachPortCreateRunLoopSource(nil, keep, 0), .commonModes)
-            ready.signal()
-            CFRunLoopRun()
-        }
-        thread.name = "dev.swwm.ax"
-        thread.start()
-        ready.wait()
-    }
-
-    func perform(_ block: @escaping () -> Void) {
-        CFRunLoopPerformBlock(runLoop, CFRunLoopMode.commonModes.rawValue, block)
-        CFRunLoopWakeUp(runLoop)
-    }
-
-    func add(_ source: CFRunLoopSource) { CFRunLoopAddSource(runLoop, source, .commonModes) }
-
-    func remove(_ source: CFRunLoopSource) { CFRunLoopRemoveSource(runLoop, source, .commonModes) }
-}
-
-/// A write to a window: the newest one per window wins (a drag sends many).
-enum WindowWrite: Sendable {
-
-    case frame(CGRect)
-    case position(CGPoint)
-}
-
-/// What app connections tell the manager, on the main thread, in each app's
-/// order.
-protocol AppEvents: AnyObject {
-
-    func appWindows(_ found: [AppWindow], pid: pid_t, adopting: Bool)
-    func windowAppeared(_ w: AppWindow)
-    func windowGone(_ id: WindowID, listed: [AppWindow])
-    func windowMinimized(_ id: WindowID)
-    func titleChanged(_ id: WindowID, _ title: String)
-    func focusChanged(_ w: AppWindow?, pid: pid_t)
-    func writeFailed(_ id: WindowID)
-    func appAnswered(_ ids: Set<WindowID>)
-    func startApps(_ pids: Set<pid_t>)
-    func appTerminated(_ pid: pid_t)
-    func appHidden(_ pid: pid_t)
-}
-
 /// Everything swwm says to one app goes through here, on the app's own
 /// queue, waiting for the app's answer: a busy app (Xcode launching) delays
 /// only its own windows and none of its events get lost, and the main

@@ -9,10 +9,6 @@ import AppKit
 import ApplicationServices
 import SwwmCore
 
-/// Private but stable: maps an AX window element to its CGWindowID.
-@_silgen_name("_AXUIElementGetWindow")
-func _AXUIElementGetWindow(_ element: AXUIElement, _ id: UnsafeMutablePointer<CGWindowID>) -> AXError
-
 /// A window of another app, driven through the Accessibility API.
 /// Coordinates are global with a top-left origin.
 struct AXWindow {
@@ -29,27 +25,9 @@ struct AXWindow {
         self.appName = appName
     }
 
-    init?(_ element: AXUIElement, app: NSRunningApplication) {
-        var id: CGWindowID = 0
-        guard _AXUIElementGetWindow(element, &id) == .success, id != 0 else { return nil }
-        self.element = element
-        self.pid = app.processIdentifier
-        self.id = id
-        self.appName = app.localizedName ?? ""
-    }
-
     var title: String { element.attribute(kAXTitleAttribute) ?? "" }
     var isMinimized: Bool { element.attribute(kAXMinimizedAttribute) ?? false }
     var isFullScreen: Bool { element.attribute("AXFullScreen") ?? false }
-
-    var isStandard: Bool {
-        element.attribute(kAXRoleAttribute) == kAXWindowRole as String
-            && element.attribute(kAXSubroleAttribute) == kAXStandardWindowSubrole as String
-    }
-
-    /// Window server level: 0 for normal windows. System prompts (SecurityAgent
-    /// sits at 1000), floating panels and overlays are above and never tiled.
-    var level: Int { WindowServer.window(id)?.layer ?? 0 }
 
     var isResizable: Bool {
         var settable: DarwinBoolean = false
@@ -142,14 +120,5 @@ struct AXWindow {
         [{ AXUIElementSetAttributeValue(element, kAXMainAttribute as CFString, kCFBooleanTrue) },
          { raise() },
          { NSRunningApplication(processIdentifier: pid)?.activate() }]
-    }
-}
-
-extension AXUIElement {
-
-    func attribute<T>(_ name: String) -> T? {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(self, name as CFString, &value) == .success else { return nil }
-        return value as? T
     }
 }

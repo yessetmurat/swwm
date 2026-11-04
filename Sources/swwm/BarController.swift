@@ -8,15 +8,6 @@
 import AppKit
 import SwwmCore
 
-/// The right side of the bar: system state, the same on every display.
-struct Status: Equatable {
-
-    var language: String?
-    var clock: String
-    var battery: IndicatorItem?
-    var volume: IndicatorItem?
-}
-
 /// One bar panel per display, redrawn at most once per run-loop turn.
 final class BarController {
 

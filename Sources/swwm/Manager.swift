@@ -715,8 +715,6 @@ final class Manager: AppEvents {
 
     func appName(of id: WindowID) -> String? { windows[id]?.app }
 
-    func pid(of id: WindowID) -> pid_t? { windows[id]?.pid }
-
     /// A click or key press: focus that follows it is the user's doing.
     /// `click`: the user's own click focuses what it hits, so a focus command
     /// still waiting for its app is stale.
@@ -765,9 +763,6 @@ final class Manager: AppEvents {
         if let w = windows[id] { connections?.connection(w.pid)?.setPosition(id, p) }
     }
 
-    /// The last frame its app reported.
-    func frame(of id: WindowID) -> CGRect? { windows[id]?.frame }
-
     /// Ends a modifier+left drag: a tiled window dropped on another tiled
     /// window swaps with it, or joins the active workspace of the display it
     /// was dropped on.
@@ -803,44 +798,8 @@ final class Manager: AppEvents {
         layout(m)
     }
 
-    func isFloating(_ id: WindowID) -> Bool { world.workspace(containing: id)?.floating[id] != nil }
-
     private func windowUnder(_ p: CGPoint, excluding id: WindowID) -> WindowID? {
         guard let ws = world.workspace(containing: id) else { return nil }
         return ws.tree.windows.first { $0 != id && world.shownFrame(of: $0)?.contains(p) == true }
     }
-}
-
-/// A window swwm manages, as its app last reported it.
-struct ManagedWindow {
-
-    let id: WindowID
-    let pid: pid_t
-    let app: String
-    let kind: String          // windows of one kind tile or float alike
-    var title: String
-    var frame: CGRect
-    init(_ w: AppWindow) {
-        id = w.id
-        pid = w.pid
-        app = w.app
-        // The full-screen button tells an app's main windows from its panels
-        // (Finder's browser windows from its Info windows).
-        kind = "\(w.app)|\(w.hasFullScreenButton)"
-        title = w.title
-        frame = w.frame
-    }
-}
-
-/// What the manager tells the event tap about the windows, after each change.
-struct TapView: Sendable {
-
-    var takesFocus: Set<WindowID> = []   // managed and on screen
-    var raised: Set<WindowID> = []       // at the floating level
-    var floating: Set<WindowID> = []
-    var frames: [WindowID: CGRect] = [:] // as their apps last reported them
-    var floatingFrames: [CGRect] = []    // of the focused window's workspace
-    var focused: WindowID?
-    var focusUnmanaged = false
-    var lastCursorMove = Date.distantPast
 }

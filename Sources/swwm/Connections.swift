@@ -112,34 +112,3 @@ final class Connections {
         ax.perform { c.connect() }
     }
 }
-
-extension NSRunningApplication {
-
-    /// Apps whose windows swwm manages: regular apps, and menu-bar (accessory)
-    /// apps that open windows, such as 1Password. Not macOS's own accessory
-    /// agents (the Touch ID and password prompts of coreautha and
-    /// SecurityAgent, Notification Center), not background agents, not swwm.
-    var isManageable: Bool {
-        guard processIdentifier != getpid() else { return false }
-        switch activationPolicy {
-        case .regular: return true
-        case .accessory: return bundleURL.map { !$0.path.hasPrefix("/System/") } ?? false
-        default: return false
-        }
-    }
-}
-
-/// Whether the screen is locked; any thread.
-final class ScreenLock: Sendable {
-
-    private let locked = OSAllocatedUnfairLock(initialState: ScreenLock.lockedNow)
-
-    var isLocked: Bool {
-        get { locked.withLock { $0 } }
-        set { locked.withLock { $0 = newValue } }
-    }
-
-    private static var lockedNow: Bool {
-        (CGSessionCopyCurrentDictionary() as? [String: Any])?["CGSSessionScreenIsLocked"] as? Bool ?? false
-    }
-}

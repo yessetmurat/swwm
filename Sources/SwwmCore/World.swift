@@ -7,34 +7,6 @@
 
 import CoreGraphics
 
-public struct MonitorInfo: Equatable, Sendable {
-
-    public var id: MonitorID
-    public var name: String
-    public var isBuiltin: Bool
-    public var frame: CGRect  // global, top-left origin (AX coordinates)
-
-    public init(id: MonitorID, name: String, isBuiltin: Bool, frame: CGRect) {
-        self.id = id
-        self.name = name
-        self.isBuiltin = isBuiltin
-        self.frame = frame
-    }
-}
-
-public final class Workspace {
-
-    public let name: String
-    public let tree = DwindleTree()
-    public var floating: [WindowID: CGRect] = [:]  // last frame of each floating window
-    public var zoomed: WindowID?
-    public internal(set) var mru: [WindowID] = []  // most recent first
-
-    init(name: String) { self.name = name }
-
-    public var windows: [WindowID] { tree.windows + floating.keys.sorted() }
-}
-
 /// Workspaces, the displays they live on, and which one each display shows.
 /// Pure state: the app layer applies it to real windows.
 public final class World {

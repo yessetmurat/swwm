@@ -10,9 +10,6 @@ import Foundation
 public typealias WindowID = UInt32   // CGWindowID
 public typealias MonitorID = UInt32  // CGDirectDisplayID
 
-public enum Direction: String, Sendable { case left, down, up, right }
-public enum Axis: String, Sendable { case x, y }
-
 public struct CommandError: Error, Equatable, Sendable {
 
     public let message: String
