@@ -325,10 +325,8 @@ final class Manager {
         // A tile may lie under floating windows, which stay on top: the cursor
         // goes to a part of it that shows, or stays put when none does, else
         // the next mouse move would hand focus to the window above.
-        let f = w.frame
-        let covers = world.workspace(containing: id).map { ws in
-            ws.tree.contains(id) ? ws.floating.keys.compactMap { windows[$0]?.frame } : []
-        } ?? []
+        guard let f = world.shownFrame(of: id) else { return }
+        let covers = world.workspace(containing: id).map { ws in ws.tree.contains(id) ? Array(ws.floating.values) : [] } ?? []
         let cursor = Displays.cursor
         guard !f.contains(cursor) || covers.contains(where: { $0.contains(cursor) }),
               let p = visiblePoint(of: f, under: covers) else { return }
@@ -384,6 +382,7 @@ final class Manager {
             }
         }
         pendingPark = nil
+        focusInUnmanagedWindow = false  // swwm holds focus itself
         park.park(on: pending.info, desktopPoint: nil)
     }
 
@@ -452,14 +451,20 @@ final class Manager {
         log.debug("appActivated \(app.localizedName ?? "?", privacy: .public)")
         let el = AXUIElementCreateApplication(app.processIdentifier)
         guard let win: AXUIElement = el.attribute(kAXFocusedWindowAttribute),
-              let w = AXWindow(win, app: app) else { return }
+              let w = AXWindow(win, app: app) else { return noFocusedWindow() }
         windowFocusChanged(w, facts: WindowFacts(w))
+    }
+
+    /// The app now frontmost has no focused window.
+    func noFocusedWindow() {
+        focusInUnmanagedWindow = false
     }
 
     /// A focus change reported by an app. A window that was not manageable
     /// when it appeared (fullscreen, subrole not ready yet) gets another try.
     func windowFocusChanged(_ w: AXWindow, facts: WindowFacts) {
         if windows[w.id] == nil { windowCreated(w, facts: facts) }
+        focusInUnmanagedWindow = windows[w.id] == nil
         // Focus moved to a window swwm does not manage on another display:
         // the parked display no longer has the keyboard.
         if windows[w.id] == nil, let m = park.monitor, let b = WindowServer.window(w.id)?.bounds,
@@ -626,28 +631,16 @@ final class Manager {
 
     /// The topmost managed window under `p`, or nil when an unmanaged window is on top.
     func window(at p: CGPoint) -> WindowID? {
-        let me = getpid()
-        for w in WindowServer.onScreen(excludingDesktop: true) where w.bounds.contains(p) {
-            // swwm's own bar is on top here: nothing under it takes focus.
-            if w.pid == me, w.alpha > 0 { return nil }
-            // Floating windows swwm raised, and their sheets, sit above layer 0.
-            guard w.layer == 0 || (w.layer == Int(WindowLevel.floating) && levels.isRaised(w.id)) else { continue }
-            // Hidden windows keep a sliver on screen; they must never take focus.
-            return windows[w.id] != nil && hidden[w.id] == nil ? w.id : nil
-        }
-        return nil
+        guard let id = SwwmCore.windowUnder(p, in: WindowServer.onScreen(excludingDesktop: true), ownPID: getpid(),
+                                   raised: levels.isRaised) else { return nil }
+        // Hidden windows keep a sliver on screen; they must never take focus.
+        return windows[id] != nil && hidden[id] == nil ? id : nil
     }
 
     /// True while the user is in a window swwm does not manage (a system prompt
     /// such as SecurityAgent's, a sheet, a launcher panel): focus-follows-mouse
-    /// must not pull focus away from it.
-    var focusInUnmanagedWindow: Bool {
-        guard let app = NSWorkspace.shared.frontmostApplication, app.processIdentifier != getpid() else { return false }
-        let el = AXUIElementCreateApplication(app.processIdentifier)
-        guard let win: AXUIElement = el.attribute(kAXFocusedWindowAttribute) else { return false }
-        var id: CGWindowID = 0
-        return _AXUIElementGetWindow(win, &id) == .success && windows[id] == nil
-    }
+    /// must not pull focus away from it. Kept from the focus reports.
+    private(set) var focusInUnmanagedWindow = false
 
     func setFrame(_ id: WindowID, _ r: CGRect) { windows[id]?.setFrame(r) }
 

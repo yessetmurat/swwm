@@ -25,7 +25,7 @@ final class EventTap {
     private var settings = Settings()
     private var port: CFMachPort?
     private var drag: Drag?
-    private var press: (window: WindowID, frame: CGRect)?  // plain left press on a managed window
+    private var press: (window: WindowID, frame: CGRect, point: CGPoint, clicks: Int)?  // plain left press on a managed window
     private var lastHover = Date.distantPast
     var onMouseMoved: (CGPoint) -> Void = { _ in }
     private var pendingDragPoint: CGPoint?  // coalesced: only the latest drag position is applied
@@ -79,9 +79,10 @@ final class EventTap {
             guard modifiers(event.flags) == settings.mouseModifier else {
                 // A plain press may start a title-bar move or an edge resize.
                 let p = event.location
+                let clicks = Int(event.getIntegerValueField(.mouseEventClickState))
                 DispatchQueue.main.async { [self] in
                     press = type == .leftMouseDown
-                        ? manager.window(at: p).flatMap { id in manager.frame(of: id).map { (id, $0) } }
+                        ? manager.window(at: p).flatMap { id in manager.frame(of: id).map { (id, $0, p, clicks) } }
                         : nil
                 }
                 return event
@@ -102,7 +103,7 @@ final class EventTap {
             guard let d = drag else {
                 if type == .leftMouseUp {
                     DispatchQueue.main.async { [self] in
-                        if let pr = press { nativeDragEnded(pr.window, from: pr.frame, at: p) }
+                        if let pr = press { nativeDragEnded(pr.window, from: pr.frame, pressedAt: pr.point, clicks: pr.clicks, at: p) }
                         press = nil
                     }
                 }
@@ -137,15 +138,12 @@ final class EventTap {
 
     /// The window was moved by its title bar or resized by an edge without
     /// swwm: fold that into the layout instead of leaving it out of place.
-    private func nativeDragEnded(_ id: WindowID, from old: CGRect, at p: CGPoint) {
-        guard let new = manager.frame(of: id), new != old else { return }
-        if new.size == old.size {
-            manager.dropped(id, at: p)
-        } else {
-            // The edge that moved: right/bottom if it did, else left/top.
-            let dx = new.maxX != old.maxX ? new.maxX - old.maxX : new.minX - old.minX
-            let dy = new.maxY != old.maxY ? new.maxY - old.maxY : new.minY - old.minY
-            manager.resized(id, by: CGSize(width: dx, height: dy))
+    private func nativeDragEnded(_ id: WindowID, from old: CGRect, pressedAt start: CGPoint, clicks: Int, at p: CGPoint) {
+        guard let new = manager.frame(of: id) else { return }
+        switch nativeChange(from: old, to: new, pressedAt: start, clickCount: clicks) {
+        case .moved?: manager.dropped(id, at: p)
+        case .resized(let delta)?: manager.resized(id, by: delta)
+        case nil: break
         }
     }
 

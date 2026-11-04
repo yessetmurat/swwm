@@ -107,7 +107,10 @@ final class AppObserver {
         on(NSWorkspace.didActivateApplicationNotification) { [weak self] app in
             self?.onAppQueue(app) { [weak self] in
                 let el = AXUIElementCreateApplication(app.processIdentifier)
-                guard let win: AXUIElement = Self.patiently(el, { el.attribute(kAXFocusedWindowAttribute) }) else { return }
+                guard let win: AXUIElement = Self.patiently(el, { el.attribute(kAXFocusedWindowAttribute) }) else {
+                    DispatchQueue.main.async { self?.manager.noFocusedWindow() }
+                    return
+                }
                 self?.focusChanged(win, app: app)
             }
         }
