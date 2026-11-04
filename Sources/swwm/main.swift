@@ -54,7 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let config = loader.load()
         let manager = Manager(world: World(config: config))
         let tap = EventTap(manager: manager)
-        let connections = Connections(manager: manager)
+        let connections = Connections(events: manager)
         manager.connections = connections
         let bar = BarController(manager: manager)
         apply = { config in
@@ -73,7 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.notify("Floating windows on top need the updated Dock module: "
                 + "run `sudo swwm --install-dock-module`, then `killall Dock`.")
         }
-        manager.tapState = tap.state
+        manager.onPublish = { [state = tap.state] view in state.update { $0.view = view } }
         manager.onChange = { [weak manager] in
             bar.setNeedsUpdate()
             manager?.publishSoon()

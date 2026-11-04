@@ -19,15 +19,15 @@ final class Connections {
     nonisolated(unsafe) static weak var current: Connections?
 
     private let ax = AXThread()
-    private unowned let manager: Manager
+    private unowned let events: AppEvents
     private let map = OSAllocatedUnfairLock(initialState: [pid_t: AppConnection]())
     private var startPids: Set<pid_t> = []  // main: apps running when swwm started
     private var tokens: [NSObjectProtocol] = []
     let focusTicket = FocusTicket()
     private let screen = ScreenLock()
 
-    init(manager: Manager) {
-        self.manager = manager
+    init(events: AppEvents) {
+        self.events = events
     }
 
     /// Any thread.
@@ -49,7 +49,7 @@ final class Connections {
         Connections.current = self
         let running = NSWorkspace.shared.runningApplications.filter(\.isManageable)
         startPids = Set(running.map(\.processIdentifier))
-        manager.startApps(startPids)
+        events.startApps(startPids)
         for app in running { connect(app) }
         // While the screen is locked apps list no windows: they are reported
         // once it is unlocked.
@@ -76,10 +76,10 @@ final class Connections {
             guard let self else { return }
             let pid = app.processIdentifier
             if let c = map.withLock({ $0.removeValue(forKey: pid) }) { ax.perform { c.disconnect() } }
-            manager.appTerminated(pid)
+            events.appTerminated(pid)
         }
         on(NSWorkspace.didHideApplicationNotification) { [weak self] app in
-            self?.manager.appHidden(app.processIdentifier)
+            self?.events.appHidden(app.processIdentifier)
         }
         on(NSWorkspace.didUnhideApplicationNotification) { [weak self] app in
             self?.connection(app.processIdentifier)?.rescan()
@@ -104,7 +104,7 @@ final class Connections {
         let pid = app.processIdentifier
         let c = map.withLock { map in
             if let c = map[pid] { return c }
-            let c = AppConnection(app: app, ax: ax, events: manager, adopting: startPids.contains(pid), focusTicket: focusTicket,
+            let c = AppConnection(app: app, ax: ax, events: events, adopting: startPids.contains(pid), focusTicket: focusTicket,
                                   screen: screen)
             map[pid] = c
             return c

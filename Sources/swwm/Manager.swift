@@ -6,10 +6,7 @@
 //
 
 import AppKit
-import os
 import SwwmCore
-
-let log = Logger(subsystem: "dev.swwm.swwm", category: "events")
 
 /// Applies the World to real windows and turns events and commands into
 /// World changes.
@@ -47,7 +44,7 @@ final class Manager: AppEvents {
     private var history = FocusHistory()
     var focused: WindowID? { history.current }
     private(set) var lastCursorMove = Date.distantPast { didSet { publishSoon() } }  // a warp or swwm's own click
-    weak var tapState: TapStateBox?                       // what the event tap decides from
+    var onPublish: ((TapView) -> Void)?                   // hands the event tap what it decides from
     private var publishPending = false
     private let park = FocusPark()
     private var parkGeneration = 0                       // a pending desktop click is dropped once this moves
@@ -694,10 +691,10 @@ final class Manager: AppEvents {
     /// must not pull focus away from it. Kept from the focus reports.
     private(set) var focusInUnmanagedWindow = false { didSet { publishSoon() } }
 
-    /// Gives the event tap a fresh `TapState`, once per run-loop turn of
+    /// Gives the event tap a fresh `TapView`, once per run-loop turn of
     /// changes.
     func publishSoon() {
-        guard tapState != nil, !publishPending else { return }
+        guard onPublish != nil, !publishPending else { return }
         publishPending = true
         DispatchQueue.main.async { [self] in
             publishPending = false
@@ -706,17 +703,9 @@ final class Manager: AppEvents {
             let frames = windows.mapValues(\.frame)
             let floatingFrames = focused.flatMap(world.workspace(containing:)).map { Array($0.floating.values) } ?? []
             let raised = Set(windows.keys.filter(levels.isRaised))
-            let (focused, unmanaged, moved) = (self.focused, focusInUnmanagedWindow, lastCursorMove)
-            tapState?.update {
-                $0.takesFocus = shown
-                $0.floating = floating
-                $0.frames = frames
-                $0.floatingFrames = floatingFrames
-                $0.raised = raised
-                $0.focused = focused
-                $0.focusUnmanaged = unmanaged
-                $0.lastCursorMove = moved
-            }
+            onPublish?(TapView(takesFocus: shown, raised: raised, floating: floating, frames: frames,
+                               floatingFrames: floatingFrames, focused: focused, focusUnmanaged: focusInUnmanagedWindow,
+                               lastCursorMove: lastCursorMove))
         }
     }
 
@@ -841,4 +830,17 @@ struct ManagedWindow {
         title = w.title
         frame = w.frame
     }
+}
+
+/// What the manager tells the event tap about the windows, after each change.
+struct TapView: Sendable {
+
+    var takesFocus: Set<WindowID> = []   // managed and on screen
+    var raised: Set<WindowID> = []       // at the floating level
+    var floating: Set<WindowID> = []
+    var frames: [WindowID: CGRect] = [:] // as their apps last reported them
+    var floatingFrames: [CGRect] = []    // of the focused window's workspace
+    var focused: WindowID?
+    var focusUnmanaged = false
+    var lastCursorMove = Date.distantPast
 }

@@ -90,11 +90,11 @@ final class EventTap {
             guard modifiers(event.flags) == s.settings.mouseModifier else {
                 // A plain press may start a title-bar move or an edge resize.
                 let clicks = Int(event.getIntegerValueField(.mouseEventClickState))
-                press = type == .leftMouseDown ? s.window(at: p).flatMap { id in s.frames[id].map { (id, $0, p, clicks) } } : nil
+                press = type == .leftMouseDown ? s.window(at: p).flatMap { id in s.view.frames[id].map { (id, $0, p, clicks) } } : nil
                 return event
             }
-            guard let id = s.window(at: p), let frame = s.frames[id] else { return event }
-            drag = Drag(window: id, resize: type == .rightMouseDown, floating: s.floating.contains(id), start: p, frame: frame)
+            guard let id = s.window(at: p), let frame = s.view.frames[id] else { return event }
+            drag = Drag(window: id, resize: type == .rightMouseDown, floating: s.view.floating.contains(id), start: p, frame: frame)
             DispatchQueue.main.async { [manager] in manager.pointerFocus(id, hover: false) }
             return nil
         case .leftMouseDragged, .rightMouseDragged:
@@ -172,9 +172,9 @@ final class EventTap {
         let now = Date()
         guard now.timeIntervalSince(lastHover) > 0.03 else { return }
         lastHover = now
-        if let f = s.focused, s.frames[f]?.contains(p) == true, !s.floatingFrames.contains(where: { $0.contains(p) }) { return }
-        guard let id = s.window(at: p), hoverTakesFocus(id, focused: s.focused, shown: s.takesFocus, focusUnmanaged: s.focusUnmanaged,
-                                                       lastCursorMove: s.lastCursorMove, now: now) else { return }
+        if let f = s.view.focused, s.view.frames[f]?.contains(p) == true, !s.view.floatingFrames.contains(where: { $0.contains(p) }) { return }
+        guard let id = s.window(at: p), hoverTakesFocus(id, focused: s.view.focused, shown: s.view.takesFocus, focusUnmanaged: s.view.focusUnmanaged,
+                                                       lastCursorMove: s.view.lastCursorMove, now: now) else { return }
         DispatchQueue.main.async { [manager] in manager.pointerFocus(id, hover: true) }
     }
 }

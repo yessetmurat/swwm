@@ -59,6 +59,9 @@ protocol AppEvents: AnyObject {
     func focusChanged(_ w: AppWindow?, pid: pid_t)
     func writeFailed(_ id: WindowID)
     func appAnswered(_ ids: Set<WindowID>)
+    func startApps(_ pids: Set<pid_t>)
+    func appTerminated(_ pid: pid_t)
+    func appHidden(_ pid: pid_t)
 }
 
 /// Everything swwm says to one app goes through here, on the app's own
