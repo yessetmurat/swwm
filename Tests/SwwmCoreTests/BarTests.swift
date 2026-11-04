@@ -43,8 +43,8 @@ import Testing
 
 @Test func barStepsAsideForTheMenuBar() {
     let f = B.frame  // top at y 0, bar 40 tall
-    // Cursor at the very top edge: macOS reveals its menu there, the bar hides.
 
+    // Cursor at the very top edge: macOS reveals its menu there, the bar hides.
     #expect(barHidden(
         cursor: CGPoint(x: 100, y: 0),
         display: f,

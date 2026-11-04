@@ -58,6 +58,7 @@ private func w(
 
 @Test func cursorWindowIsSkipped() {
     let cursor = w(8, layer: Int(CGWindowLevelForKey(.cursorWindow)))
+
     #expect(windowUnder(
         p,
         in: [cursor, w(2)],
@@ -92,6 +93,7 @@ private func w(
 
 @Test func titleBarDragIsAMove() {
     let old = CGRect(x: 0, y: 0, width: 400, height: 300)
+
     #expect(nativeChange(
         from: old,
         to: old.offsetBy(dx: 50, dy: 0),
@@ -102,6 +104,7 @@ private func w(
 
 @Test func doubleClickIsIgnored() {
     let old = CGRect(x: 0, y: 0, width: 400, height: 300)
+
     #expect(nativeChange(
         from: old,
         to: CGRect(x: 0, y: 0, width: 800, height: 600),
@@ -113,6 +116,7 @@ private func w(
 @Test func contentClickIsIgnored() {
     // A button that resizes its own window.
     let old = CGRect(x: 0, y: 0, width: 400, height: 300)
+
     #expect(nativeChange(
         from: old,
         to: CGRect(x: 0, y: 0, width: 500, height: 300),
@@ -123,6 +127,7 @@ private func w(
 
 @Test func unchangedFrameIsNoChange() {
     let old = CGRect(x: 0, y: 0, width: 400, height: 300)
+
     #expect(nativeChange(
         from: old,
         to: old,

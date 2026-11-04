@@ -84,7 +84,10 @@ public final class World {
         for m in free where !autoOwner.values.contains(m.name) {
             var name = m.name
             var n = 2
-            while spaces[name] != nil { name = "\(m.name) \(n)"; n += 1 }
+            while spaces[name] != nil {
+                name = "\(m.name) \(n)"
+                n += 1
+            }
             spaces[name] = Workspace(name: name)
             autoOwner[name] = m.name
             autoOrder.append(name)

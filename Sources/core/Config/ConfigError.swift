@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import TOMLKit
 
 public struct ConfigError: Error, Equatable, Sendable {
 

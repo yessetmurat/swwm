@@ -148,13 +148,15 @@ final class EventTap {
             let p = event.location
             guard let d = drag else {
                 if type == .leftMouseUp, let pr = press {
-                    DispatchQueue.main.async { [self] in nativeDragEnded(
-                        pr.window,
-                        from: pr.frame,
-                        pressedAt: pr.point,
-                        clicks: pr.clicks,
-                        at: p
-                    ) }
+                    DispatchQueue.main.async { [self] in
+                        nativeDragEnded(
+                            pr.window,
+                            from: pr.frame,
+                            pressedAt: pr.point,
+                            clicks: pr.clicks,
+                            at: p
+                        )
+                    }
                 }
                 press = nil
                 return event

@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import TOMLKit
 
 /// Bar look.
 public struct BarStyle: Equatable, Sendable {

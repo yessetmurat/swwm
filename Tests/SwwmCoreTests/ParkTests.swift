@@ -115,6 +115,7 @@ private let desktop = w(9, layer: desk, owner: "Finder")
 @Test func cursorWindowIsIgnored() {
     // The window server lists the cursor as a window when it sits on the point.
     let cursor = w(2, layer: Int(CGWindowLevelForKey(.cursorWindow)), owner: "Window Server")
+
     #expect(parkStep(
         at: p,
         onScreen: [cursor, desktop],

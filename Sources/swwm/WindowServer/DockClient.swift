@@ -82,23 +82,26 @@ final class DockClient {
         }
         defer { close(fd) }
 
-        let sent = bytes.withUnsafeBytes { Darwin.send(
-            fd,
-            $0.baseAddress,
-            $0.count,
-            0
-        ) }
+        let sent = bytes.withUnsafeBytes { buffer in
+            Darwin.send(
+                fd,
+                buffer.baseAddress,
+                buffer.count,
+                0
+            )
+        }
         guard sent == bytes.count else {
             return .unreachable
         }
 
         var reply: UInt8 = 0
-        guard recv(
+        let received = recv(
             fd,
             &reply,
             1,
             0
-        ) == 1 else {
+        )
+        guard received == 1 else {
             return .unreachable
         }
 

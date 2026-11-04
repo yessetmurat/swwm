@@ -6,8 +6,6 @@
 //
 
 import AppKit
-import os
-import SwwmCore
 
 extension NSRunningApplication {
 

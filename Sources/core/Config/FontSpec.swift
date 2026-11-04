@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import TOMLKit
 
 /// A font as "Family:Style:Size", e.g. "IBM Plex Mono:SemiBold:15".
 public struct FontSpec: Hashable, Sendable {

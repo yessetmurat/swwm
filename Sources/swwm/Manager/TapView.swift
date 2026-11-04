@@ -5,7 +5,7 @@
 //  Created by Yesset Murat on 03.11.2026.
 //
 
-import AppKit
+import Foundation
 import SwwmCore
 
 /// What the manager tells the event tap about the windows, after each change.

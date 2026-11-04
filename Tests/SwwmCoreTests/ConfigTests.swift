@@ -9,7 +9,12 @@ import Testing
 @testable import SwwmCore
 
 private func err(_ s: String) -> String? {
-    do { _ = try Config.parse(s); return nil } catch { return error.message }
+    do {
+        _ = try Config.parse(s)
+        return nil
+    } catch {
+        return error.message
+    }
 }
 
 @Test func defaultParses() throws {

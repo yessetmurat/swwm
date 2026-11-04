@@ -43,6 +43,7 @@ func world(_ ms: [MonitorInfo], _ config: Config = .default) -> World {
 
 @Test func externalOnlyIsHome() {
     let w = world([E])
+
     #expect(w.workspaces(on: 2) == ["1", "2", "3", "4", "q", "w", "e", "r"])
 }
 

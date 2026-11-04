@@ -56,6 +56,7 @@ enum Client {
     }
 
     private enum Outcome {
+
         case notRunning, noAnswer, reply(Reply)
     }
 

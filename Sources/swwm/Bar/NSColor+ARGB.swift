@@ -6,7 +6,6 @@
 //
 
 import AppKit
-import SwwmCore
 
 extension NSColor {
 

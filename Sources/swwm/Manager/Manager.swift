@@ -260,7 +260,10 @@ final class Manager: AppEvents {
     }
 
     func layout(_ m: MonitorID) {
-        defer { onChange(); saveSoon() }
+        defer {
+            onChange()
+            saveSoon()
+        }
         guard let info = world.monitorInfo(m), let activeName = world.activeWorkspace(on: m),
               let ws = world.workspace(named: activeName) else {
             return
@@ -833,14 +836,15 @@ final class Manager: AppEvents {
         let shown: Set<WindowID> = windows[id] != nil && world.isVisible(id) && hidden[id] == nil ? [id] : []
 
         if hover {
-            guard hoverTakesFocus(
+            let takesFocus = hoverTakesFocus(
                 id,
                 focused: focused,
                 shown: shown,
                 focusUnmanaged: focusInUnmanagedWindow,
                 lastCursorMove: lastCursorMove,
                 now: Date()
-            ) else {
+            )
+            guard takesFocus else {
                 return
             }
         } else {

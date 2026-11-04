@@ -56,7 +56,7 @@ enum WindowServer {
         var point = p, local = CGPoint.zero
         var id: UInt32 = 0, owner: Int32 = 0
 
-        guard find(
+        let found = find(
             SkyLight.connection,
             0,
             1,
@@ -65,7 +65,8 @@ enum WindowServer {
             &local,
             &id,
             &owner
-        ) == 0, id != 0 else {
+        )
+        guard found == 0, id != 0 else {
             return nil
         }
         return id
@@ -89,12 +90,14 @@ enum WindowServer {
             if let e = WindowServerEvent(type: type, data: bytes) { WindowServer.handler(e) }
         }
 
-        for type in WindowServerEvent.types { _ = register(
-            SkyLight.connection,
-            callback,
-            type,
-            nil
-        ) }
+        for type in WindowServerEvent.types {
+            _ = register(
+                SkyLight.connection,
+                callback,
+                type,
+                nil
+            )
+        }
     }
 
     /// Moved and resized events come only for windows asked for here; pass

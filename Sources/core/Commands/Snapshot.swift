@@ -35,12 +35,14 @@ public struct Frame: Codable, Equatable, Sendable {
         (self.x, self.y, self.width, self.height) = (x, y, width, height)
     }
 
-    init(_ r: CGRect) { self.init(
-        x: r.minX,
-        y: r.minY,
-        width: r.width,
-        height: r.height
-    ) }
+    init(_ r: CGRect) {
+        self.init(
+            x: r.minX,
+            y: r.minY,
+            width: r.width,
+            height: r.height
+        )
+    }
 }
 
 public struct WindowSnapshot: Codable, Equatable, Sendable {

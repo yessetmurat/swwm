@@ -20,10 +20,16 @@ func tree(_ ids: WindowID...) -> DwindleTree {
 }
 
 /// 1 left, 2 top-right, 3 bottom-right.
-func tree3() -> DwindleTree { let t = tree(1, 2); t.insert(3, splitting: 2); return t }
+func tree3() -> DwindleTree {
+    let t = tree(1, 2)
+    t.insert(3, splitting: 2)
+    return t
+}
 
 @Test func oneWindowFills() {
-    let t = DwindleTree(); t.insert(1, splitting: nil)
+    let t = DwindleTree()
+    t.insert(1, splitting: nil)
+
     #expect(t.frames(in: R, gap: 0) == [1: R])
 }
 
@@ -50,7 +56,8 @@ func tree3() -> DwindleTree { let t = tree(1, 2); t.insert(3, splitting: 2); ret
 }
 
 @Test func removeCollapses() {
-    let t = tree3(); t.remove(2)
+    let t = tree3()
+    t.remove(2)
 
     #expect(t.frames(in: R, gap: 0) == [
         1: CGRect(x: 0, y: 0, width: 500, height: 600),
@@ -62,14 +69,16 @@ func tree3() -> DwindleTree { let t = tree(1, 2); t.insert(3, splitting: 2); ret
 }
 
 @Test func removeLastEmpties() {
-    let t = tree(1); t.remove(1)
+    let t = tree(1)
+    t.remove(1)
 
     #expect(t.windows.isEmpty)
     #expect(t.frames(in: R, gap: 0).isEmpty)
 }
 
 @Test func insertMissingTargetSplitsLast() {
-    let t = tree(1, 2); t.insert(3, splitting: 99)
+    let t = tree(1, 2)
+    t.insert(3, splitting: 99)
 
     #expect(t.frames(in: R, gap: 0)[3] == CGRect(x: 500, y: 300, width: 500, height: 300))
     #expect(t.contains(3))
@@ -77,7 +86,8 @@ func tree3() -> DwindleTree { let t = tree(1, 2); t.insert(3, splitting: 2); ret
 }
 
 @Test func swapExchanges() {
-    let t = tree3(); t.swap(1, 3)
+    let t = tree3()
+    t.swap(1, 3)
     let f = t.frames(in: R, gap: 0)
 
     #expect(f[3] == CGRect(x: 0, y: 0, width: 500, height: 600))
@@ -85,7 +95,8 @@ func tree3() -> DwindleTree { let t = tree(1, 2); t.insert(3, splitting: 2); ret
 }
 
 @Test func warpFromLeft() {
-    let t = tree3(); t.warp(1, onto: 3, from: .left)
+    let t = tree3()
+    t.warp(1, onto: 3, from: .left)
     // Without 1, (2,3) fills R side by side; 3's 500x600 cell then stacks 1 above 3.
     let f = t.frames(in: R, gap: 0)
 
@@ -105,12 +116,15 @@ func tree3() -> DwindleTree { let t = tree(1, 2); t.insert(3, splitting: 2); ret
 }
 
 @Test func mirrorY() {
-    let t = tree(1, 2); t.mirror(.y, in: R)
+    let t = tree(1, 2)
+    t.mirror(.y, in: R)
+
     #expect(t.frames(in: R, gap: 0)[2]!.minX == 0)
 }
 
 @Test func mirrorX() {
-    let t = tree3(); t.mirror(.x, in: R)
+    let t = tree3()
+    t.mirror(.x, in: R)
     let f = t.frames(in: R, gap: 0)
 
     #expect(f[3]!.minY == 0)

@@ -161,16 +161,19 @@ private func saved(
 }
 
 @Test func savedWorkspaceApplies() {
-    #expect(decide(snap(), saved: saved(
+    let last = saved(
         1,
         pid: 10,
         workspace: "3",
         floating: false
-    )) == .manage(workspace: "3", floating: false))
+    )
+
+    #expect(decide(snap(), saved: last) == .manage(workspace: "3", floating: false))
 }
 
 @Test func ruleWorkspaceApplies() throws {
     let w = world([B], try Config.parse(Config.defaultTOML + "\n[[rule]]\napp = \"^App$\"\nworkspace = \"4\""))
+
     #expect(decide(snap(), world: w) == .manage(workspace: "4", floating: false))
 }
 
@@ -180,6 +183,7 @@ private func saved(
 
 @Test func floatsByRule() throws {
     let w = world([B], try Config.parse(Config.defaultTOML + "\n[[rule]]\napp = \"^App$\"\nfloat = true"))
+
     #expect(decide(snap(), world: w) == .manage(workspace: "1", floating: true))
 }
 

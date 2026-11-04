@@ -28,11 +28,13 @@ private let external = MonitorInfo(
     // macOS keeps ~66pt of a window above the display bottom, so a window
     // hidden toward a display on the right would show on it.
     let p = hiddenOrigin(for: size, on: laptop, others: [external])
+
     #expect(p == CGPoint(x: laptop.frame.minX - size.width + 1, y: laptop.frame.maxY - 1))
 }
 
 @Test func hidesAwayFromNeighborOnTheLeft() {
     let p = hiddenOrigin(for: size, on: external, others: [laptop])
+
     #expect(p == CGPoint(x: external.frame.maxX - 1, y: external.frame.maxY - 1))
 }
 

@@ -18,7 +18,12 @@ public final class FocusTicket: Sendable {
     public init() {}
 
     /// A new ticket; every earlier one is stale from now on.
-    public func next() -> Int { value.withLock { $0 += 1; return $0 } }
+    public func next() -> Int {
+        value.withLock { ticket in
+            ticket += 1
+            return ticket
+        }
+    }
 
     public var current: Int { value.withLock { $0 } }
 

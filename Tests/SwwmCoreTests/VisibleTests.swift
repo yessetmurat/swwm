@@ -18,6 +18,7 @@ private let r = CGRect(x: 0, y: 0, width: 900, height: 900)
 
 @Test func visiblePointAvoidsCover() {
     let p = visiblePoint(of: r, under: [CGRect(x: 200, y: 0, width: 700, height: 900)])!
+
     #expect(r.contains(p) && p.x < 200)
 }
 

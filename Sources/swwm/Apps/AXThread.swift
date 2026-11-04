@@ -7,7 +7,6 @@
 
 import AppKit
 import ApplicationServices
-import SwwmCore
 
 /// A thread with its own run loop for the Accessibility observers. It only
 /// routes notifications to the app connections; it never waits on an app.

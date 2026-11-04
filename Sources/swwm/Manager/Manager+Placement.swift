@@ -55,12 +55,14 @@ extension Manager {
             return
         }
 
-        c.probeAxes(id) { [weak self] width, height in self?.placed(
-            id,
-            attempt: attempt,
-            width: width,
-            height: height
-        ) }
+        c.probeAxes(id) { [weak self] width, height in
+            self?.placed(
+                id,
+                attempt: attempt,
+                width: width,
+                height: height
+            )
+        }
     }
 
     private func placed(

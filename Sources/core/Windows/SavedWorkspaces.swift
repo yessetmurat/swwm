@@ -26,12 +26,14 @@ public struct SavedWorkspaces: Codable, Equatable, Sendable {
 
     public init(world: World, pids: [WindowID: Int32]) {
         entries = pids.compactMap { id, pid in
-            world.workspace(containing: id).map { Entry(
-                window: id,
-                pid: pid,
-                workspace: $0.name,
-                floating: $0.floating[id] != nil
-            ) }
+            world.workspace(containing: id).map { ws in
+                Entry(
+                    window: id,
+                    pid: pid,
+                    workspace: ws.name,
+                    floating: ws.floating[id] != nil
+                )
+            }
         }.sorted { $0.window < $1.window }
 
         var trees: [String: DwindleTree.Shape] = [:]

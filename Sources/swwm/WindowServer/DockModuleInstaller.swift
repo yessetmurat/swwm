@@ -58,12 +58,13 @@ enum DockModuleInstaller {
         run("/bin/chmod", "644", plistPath)
 
         _ = runStatus("/bin/launchctl", "bootout", "system/\(label)")  // ignore "not loaded"
-        if runStatus(
+        let bootstrapped = runStatus(
             "/bin/launchctl",
             "bootstrap",
             "system",
             plistPath
-        ) != 0 {
+        )
+        if bootstrapped != 0 {
             die("launchctl bootstrap failed", 1)
         }
 

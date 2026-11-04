@@ -22,6 +22,7 @@ import Testing
 
 @Test func tabSiblingPicksLargestOverlap() {
     let f = CGRect(x: 0, y: 0, width: 100, height: 100)
+
     #expect(tabSibling(of: f, among: [1: CGRect(x: 50, y: 0, width: 100, height: 100),
                                       2: CGRect(x: 2, y: 0, width: 100, height: 100)]) == 2)
 }

@@ -13,6 +13,7 @@ private let area = CGRect(x: 8, y: 48, width: 1496, height: 926)
 
 @Test func visibleFloatingFrameIsKept() {
     let r = CGRect(x: 100, y: 100, width: 400, height: 300)
+
     #expect(shownFloatingFrame(r, on: B, area: area) == r)
 }
 
@@ -34,5 +35,6 @@ private let area = CGRect(x: 8, y: 48, width: 1496, height: 926)
 
 @Test func frameOnAnotherDisplayIsCentered() {
     let r = CGRect(x: 2000, y: 100, width: 400, height: 300)
+
     #expect(shownFloatingFrame(r, on: B, area: area).midX == area.midX)
 }

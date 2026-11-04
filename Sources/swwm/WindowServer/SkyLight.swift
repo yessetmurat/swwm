@@ -7,7 +7,6 @@
 
 import CoreGraphics
 import Foundation
-import SwwmCore
 
 /// SkyLight, the window server's private client framework. Needs no SIP
 /// change; a missing symbol means the feature that wants it is off.

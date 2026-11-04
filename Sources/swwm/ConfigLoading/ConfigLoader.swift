@@ -50,23 +50,25 @@ final class ConfigLoader {
         )
         let flags = UInt32(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagNoDefer)
 
-        guard let s = FSEventStreamCreate(
-            nil,
-            { _, info, _, _, _, _ in
+        let callback: FSEventStreamCallback = { _, info, _, _, _, _ in
             guard let info else {
                 return
             }
+
             Unmanaged<ConfigLoader>.fromOpaque(info).takeUnretainedValue().scheduleReload()
-        },
+        }
+        let created = FSEventStreamCreate(
+            nil,
+            callback,
             &context,
             [Self.directory.path] as CFArray,
             FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
             0.1,
             flags
         )
-        else {
-                return
-            }
+        guard let s = created else {
+            return
+        }
 
         FSEventStreamSetDispatchQueue(s, .main)
         FSEventStreamStart(s)

@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import TOMLKit
 
 public struct AppRule: @unchecked Sendable {  // NSRegularExpression is immutable
 

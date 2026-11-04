@@ -220,12 +220,14 @@ final class AppConnection {
 
     /// A window the app reported, for commands. Queue.
     private func window(_ id: WindowID) -> AXWindow? {
-        elements[id].map { AXWindow(
-            element: $0,
-            pid: pid,
-            id: id,
-            appName: app.localizedName ?? ""
-        ) }
+        elements[id].map { element in
+            AXWindow(
+                element: element,
+                pid: pid,
+                id: id,
+                appName: app.localizedName ?? ""
+            )
+        }
     }
 
     /// An AX notification of this app. AX thread; the work goes to the queue,

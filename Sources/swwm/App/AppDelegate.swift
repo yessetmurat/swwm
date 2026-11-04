@@ -118,13 +118,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         connections.start()
         tap.start()
         loader.start()
-        (
-            self.manager,
-            self.tap,
-            self.connections,
-            self.loader,
-            self.bar
-        ) = (manager, tap, connections, loader, bar)
+        self.manager = manager
+        self.tap = tap
+        self.connections = connections
+        self.loader = loader
+        self.bar = bar
 
         NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main

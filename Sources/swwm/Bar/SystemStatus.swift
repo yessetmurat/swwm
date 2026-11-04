@@ -187,26 +187,32 @@ final class SystemStatus {
         if device != kAudioObjectUnknown, AudioObjectHasProperty(device, &volumeAddress) {
             var v = Float32(0)
             var size = UInt32(MemoryLayout<Float32>.size)
-            if AudioObjectGetPropertyData(
+            let volumeRead = AudioObjectGetPropertyData(
                 device,
                 &volumeAddress,
                 0,
                 nil,
                 &size,
                 &v
-            ) == noErr { volume = v }
+            )
+            if volumeRead == noErr {
+                volume = v
+            }
 
             if AudioObjectHasProperty(device, &muteAddress) {
                 var m = UInt32(0)
                 size = UInt32(MemoryLayout<UInt32>.size)
-                if AudioObjectGetPropertyData(
+                let muteRead = AudioObjectGetPropertyData(
                     device,
                     &muteAddress,
                     0,
                     nil,
                     &size,
                     &m
-                ) == noErr { muted = m != 0 }
+                )
+                if muteRead == noErr {
+                    muted = m != 0
+                }
             }
         }
 
