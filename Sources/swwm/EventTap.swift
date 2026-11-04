@@ -167,7 +167,7 @@ final class EventTap {
     private func hover(_ p: CGPoint) {
         guard settings.focusFollowsMouse, drag == nil else { return }
         let now = Date()
-        guard now.timeIntervalSince(lastHover) > 0.03, now.timeIntervalSince(manager.lastWarp) > 0.2 else { return }
+        guard now.timeIntervalSince(lastHover) > 0.03, now.timeIntervalSince(manager.lastCursorMove) > 0.2 else { return }
         lastHover = now
         DispatchQueue.main.async { [manager] in
             if let id = manager.window(at: p), id != manager.focused, !manager.focusInUnmanagedWindow {

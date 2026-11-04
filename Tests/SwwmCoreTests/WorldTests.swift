@@ -156,18 +156,38 @@ func world(_ ms: [MonitorInfo], _ config: Config = .default) -> World {
     #expect(!w.isVisible(99))
 }
 
-@Test func layoutFrames() {
+@Test func shownFrameOfTileUsesConfigGap() {
     let w = world([B])
     let area = w.workArea(of: 1)
     w.add(1, to: "1", floatingFrame: nil)
     w.add(2, to: "1", floatingFrame: nil)
+    #expect(w.shownFrame(of: 1) == w.workspace(named: "1")?.tree.frames(in: area, gap: w.config.settings.gap)[1])
+}
+
+@Test func shownFrameKeepsVisibleFloating() {
+    let w = world([B])
     let f = CGRect(x: 100, y: 100, width: 300, height: 200)
     w.add(3, to: "q", floatingFrame: f)
-    #expect(w.layoutFrame(of: 1, gap: 8) == CGRect(x: area.minX, y: area.minY, width: (area.width - 8) / 2, height: area.height))
-    #expect(w.layoutFrame(of: 3, gap: 8) == f)  // floating, even on a hidden workspace
+    #expect(w.shownFrame(of: 3) == f)  // even on a hidden workspace
+}
+
+@Test func shownFrameCentersFloatingSliver() {
+    let w = world([B])
+    let area = w.workArea(of: 1)
+    w.add(3, to: "1", floatingFrame: CGRect(x: 1510, y: 980, width: 300, height: 200))
+    #expect(w.shownFrame(of: 3) == CGRect(x: area.midX - 150, y: area.midY - 100, width: 300, height: 200))
+}
+
+@Test func shownFrameOfZoomedIsWorkArea() {
+    let w = world([B])
+    w.add(1, to: "1", floatingFrame: nil)
+    w.add(2, to: "1", floatingFrame: nil)
     w.workspace(named: "1")?.zoomed = 2
-    #expect(w.layoutFrame(of: 2, gap: 8) == area)
-    #expect(w.layoutFrame(of: 99, gap: 8) == nil)
+    #expect(w.shownFrame(of: 2) == w.workArea(of: 1))
+}
+
+@Test func shownFrameOfUnknownIsNil() {
+    #expect(world([B]).shownFrame(of: 99) == nil)
 }
 
 @Test func replaceKeepsPlace() {
