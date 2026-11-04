@@ -72,3 +72,30 @@ private let rect = CGRect(x: 0, y: 0, width: 1000, height: 600)
     #expect(!back.wasFloating(11, pid: 7))
     #expect(!back.wasFloating(10, pid: 8))
 }
+
+@Test func mergeKeepsPendingAppEntries() {
+    let before = world([B])
+    before.add(5, to: "3", floatingFrame: nil)
+    let old = SavedWorkspaces(world: before, pids: [5: 20])
+    let merged = SavedWorkspaces(world: world([B]), pids: [:]).merging(old, pending: [20], untouched: [])
+    #expect(merged.workspace(of: 5, pid: 20) == "3")
+}
+
+@Test func mergeDropsOtherOldEntries() {
+    let before = world([B])
+    before.add(5, to: "3", floatingFrame: nil)
+    let old = SavedWorkspaces(world: before, pids: [5: 21])
+    let merged = SavedWorkspaces(world: world([B]), pids: [:]).merging(old, pending: [20], untouched: [])
+    #expect(merged.workspace(of: 5, pid: 21) == nil)
+}
+
+@Test func mergeKeepsUntouchedShapes() {
+    let before = world([B])
+    for id in [5, 6] as [WindowID] { before.add(id, to: "3", floatingFrame: nil) }
+    let old = SavedWorkspaces(world: before, pids: [5: 20, 6: 30])
+    let now = world([B])
+    now.add(6, to: "3", floatingFrame: nil)
+    let new = SavedWorkspaces(world: now, pids: [6: 30])
+    #expect(new.merging(old, pending: [20], untouched: ["3"]).trees?["3"] == old.trees?["3"])
+    #expect(new.merging(old, pending: [20], untouched: []).trees?["3"] == new.trees?["3"])
+}

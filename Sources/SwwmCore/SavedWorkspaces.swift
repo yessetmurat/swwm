@@ -44,6 +44,21 @@ public struct SavedWorkspaces: Codable, Equatable, Sendable {
         entry(window, pid)?.floating == true
     }
 
+    /// This state plus, from `old`, the entries of `pending` apps (running
+    /// at start, not reported yet) and the tile shapes of the `untouched`
+    /// workspaces: a restart during a slow start loses nothing.
+    public func merging(_ old: SavedWorkspaces, pending: Set<Int32>, untouched: Set<String>) -> SavedWorkspaces {
+        var merged = self
+        let have = Set(entries.map(\.window))
+        merged.entries += old.entries.filter { pending.contains($0.pid) && !have.contains($0.window) }
+        merged.entries.sort { $0.window < $1.window }
+        for name in untouched {
+            guard let shape = old.trees?[name] else { continue }
+            merged.trees = (merged.trees ?? [:]).merging([name: shape]) { _, old in old }
+        }
+        return merged
+    }
+
     private func entry(_ window: WindowID, _ pid: Int32) -> Entry? {
         entries.first { $0.window == window && $0.pid == pid }
     }
