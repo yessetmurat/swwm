@@ -74,13 +74,17 @@ struct AXWindow {
 
     /// Position, size, then position again: some apps clamp the size against
     /// the old position. Applied once; an app that refuses a size keeps its own.
-    func setFrame(_ r: CGRect) {
+    /// True when the app took the position.
+    @discardableResult
+    func setFrame(_ r: CGRect) -> Bool {
+        var ok = false
         withoutEnhancedUI {
             var size = r.size
-            position(r.origin)
+            ok = position(r.origin)
             AXUIElementSetAttributeValue(element, kAXSizeAttribute as CFString, AXValueCreate(.cgSize, &size)!)
             position(r.origin)
         }
+        return ok
     }
 
     /// Which axes take a new size, found in place by asking for one point

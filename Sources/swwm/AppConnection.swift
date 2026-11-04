@@ -40,30 +40,31 @@ final class AXThread {
     func remove(_ source: CFRunLoopSource) { CFRunLoopRemoveSource(runLoop, source, .commonModes) }
 }
 
-/// What an app reported about one window, with its element for the writes
-/// swwm still makes on main.
-struct Reported {
+/// A write to a window: the newest one per window wins (a drag sends many).
+enum WindowWrite: Sendable {
 
-    let window: AppWindow
-    let element: AXUIElement
+    case frame(CGRect)
+    case position(CGPoint)
 }
 
 /// What app connections tell the manager, on the main thread, in each app's
 /// order.
 protocol AppEvents: AnyObject {
 
-    func appWindows(_ found: [Reported], pid: pid_t, adopting: Bool)
-    func windowAppeared(_ r: Reported)
-    func windowGone(_ id: WindowID, listed: [Reported])
+    func appWindows(_ found: [AppWindow], pid: pid_t, adopting: Bool)
+    func windowAppeared(_ w: AppWindow)
+    func windowGone(_ id: WindowID, listed: [AppWindow])
     func windowMinimized(_ id: WindowID)
     func titleChanged(_ id: WindowID, _ title: String)
-    func focusChanged(_ r: Reported?, pid: pid_t)
+    func focusChanged(_ w: AppWindow?, pid: pid_t)
+    func writeFailed(_ id: WindowID)
 }
 
 /// Everything swwm says to one app goes through here, on the app's own
 /// queue, waiting for the app's answer: a busy app (Xcode launching) delays
-/// only its own windows and none of its events get lost. What was read goes
-/// to the manager as plain values.
+/// only its own windows and none of its events get lost, and the main
+/// thread never waits for it. What was read goes to the manager as plain
+/// values; commands return at once.
 final class AppConnection {
 
     let app: NSRunningApplication
@@ -77,14 +78,17 @@ final class AppConnection {
     private var watcher: AXObserver?               // queue: the same observer, for window notifications
     private var elements: [WindowID: AXUIElement] = [:]  // queue
     private var watched: Set<WindowID> = []        // queue
+    private let writes = PendingWrites<WindowWrite>()
+    private let focusTicket: FocusTicket
     /// How long a call waits for the app's answer: only a hung app takes this long.
     static let answerTimeout: Float = 30
 
-    init(app: NSRunningApplication, ax: AXThread, events: AppEvents, adopting: Bool) {
+    init(app: NSRunningApplication, ax: AXThread, events: AppEvents, adopting: Bool, focusTicket: FocusTicket) {
         self.app = app
         self.ax = ax
         self.events = events
         self.adopting = adopting
+        self.focusTicket = focusTicket
         queue = DispatchQueue(label: "dev.swwm.app.\(app.processIdentifier)")
     }
 
@@ -133,8 +137,8 @@ final class AppConnection {
         queue.async { [self] in
             let el = AXUIElementCreateApplication(pid)
             let win: AXUIElement? = Self.patiently(el) { el.attribute(kAXFocusedWindowAttribute) }
-            let r = win.flatMap { report($0, listed: nil) }
-            DispatchQueue.main.async { [self] in events?.focusChanged(r, pid: pid) }
+            let w = win.flatMap { report($0, listed: nil) }
+            DispatchQueue.main.async { [self] in events?.focusChanged(w, pid: pid) }
         }
     }
 
@@ -142,9 +146,66 @@ final class AppConnection {
     /// longer lists. `reply` runs on main.
     func readFrame(_ id: WindowID, reply: @escaping (CGRect?) -> Void) {
         queue.async { [self] in
-            let frame = elements[id].map { e in Self.patiently(e) { AXWindow(element: e, pid: pid, id: id, appName: "").frame } }
+            let frame = window(id).map { w in Self.patiently(w.element) { w.frame } }
             DispatchQueue.main.async { reply(frame) }
         }
+    }
+
+    // MARK: - Commands
+
+    func setFrame(_ id: WindowID, _ r: CGRect) { write(id, .frame(r)) }
+
+    func setPosition(_ id: WindowID, _ p: CGPoint) { write(id, .position(p)) }
+
+    /// A write not started yet is replaced by a newer one. One the app did
+    /// not take is reported: the window stays where it was.
+    private func write(_ id: WindowID, _ w: WindowWrite) {
+        guard writes.put(id, w) else { return }
+        queue.async { [self] in
+            guard let next = writes.take(id), let win = window(id) else { return }
+            let ok = Self.patiently(win.element) { () -> Bool in
+                switch next {
+                case .frame(let r): return win.setFrame(r)
+                case .position(let p): return win.setPosition(p)
+                }
+            }
+            if !ok { DispatchQueue.main.async { [self] in events?.writeFailed(id) } }
+        }
+    }
+
+    func raise(_ id: WindowID) {
+        queue.async { [self] in
+            guard let w = window(id) else { return }
+            Self.patiently(w.element) { w.raise() }
+        }
+    }
+
+    /// Focuses the window, unless focus moved on since `ticket` was taken.
+    func focus(_ id: WindowID, ticket: Int) {
+        queue.async { [self] in
+            guard focusTicket.current == ticket, let w = window(id) else { return }
+            Self.patiently(w.element) { w.focus() }
+        }
+    }
+
+    /// Which axes of the window take a new size; `reply` runs on main.
+    func probeAxes(_ id: WindowID, reply: @escaping (_ width: Bool, _ height: Bool) -> Void) {
+        queue.async { [self] in
+            let axes = window(id).map { w in Self.patiently(w.element) { w.resizableAxes() } } ?? (false, false)
+            DispatchQueue.main.async { reply(axes.0, axes.1) }
+        }
+    }
+
+    /// Waits until the commands sent so far ran, at most `timeout` (quit).
+    func flush(timeout: TimeInterval) {
+        let done = DispatchSemaphore(value: 0)
+        queue.async { done.signal() }
+        _ = done.wait(timeout: .now() + timeout)
+    }
+
+    /// A window the app reported, for commands. Queue.
+    private func window(_ id: WindowID) -> AXWindow? {
+        elements[id].map { AXWindow(element: $0, pid: pid, id: id, appName: app.localizedName ?? "") }
     }
 
     /// An AX notification of this app. AX thread; the work goes to the queue,
@@ -154,15 +215,16 @@ final class AppConnection {
         queue.async { [self] in
             switch notification {
             case kAXWindowCreatedNotification, kAXWindowDeminiaturizedNotification:
-                guard let r = report(element, listed: nil) else { return }
-                DispatchQueue.main.async { [self] in events?.windowAppeared(r) }
+                guard let w = report(element, listed: nil) else { return }
+                DispatchQueue.main.async { [self] in events?.windowAppeared(w) }
             case kAXFocusedWindowChangedNotification, kAXMainWindowChangedNotification:
-                let r = report(element, listed: nil)
-                DispatchQueue.main.async { [self] in events?.focusChanged(r, pid: pid) }
+                let w = report(element, listed: nil)
+                DispatchQueue.main.async { [self] in events?.focusChanged(w, pid: pid) }
             case kAXUIElementDestroyedNotification:
                 guard let id else { return }
                 elements[id] = nil
                 watched.remove(id)
+                writes.forget(id)
                 let rest = listed()
                 DispatchQueue.main.async { [self] in events?.windowGone(id, listed: rest) }
             case kAXWindowMiniaturizedNotification:
@@ -180,7 +242,7 @@ final class AppConnection {
     // MARK: - Queue
 
     /// The app's listed windows, as reports. Queue.
-    private func listed() -> [Reported] {
+    private func listed() -> [AppWindow] {
         let el = AXUIElementCreateApplication(pid)
         let list: [AXUIElement] = Self.patiently(el) { el.attribute(kAXWindowsAttribute) ?? [] }
         let ids = Set(list.compactMap(Self.windowID))
@@ -189,7 +251,7 @@ final class AppConnection {
 
     /// One window as a report, watched from now on. `listed` nil: read the
     /// app's list too. Queue.
-    private func report(_ e: AXUIElement, listed: Set<WindowID>?) -> Reported? {
+    private func report(_ e: AXUIElement, listed: Set<WindowID>?) -> AppWindow? {
         guard let id = Self.patiently(e, { Self.windowID(e) }) else {
             var n: CGWindowID = 0
             log.debug("\(self.app.localizedName ?? "?", privacy: .public): no window number (\(_AXUIElementGetWindow(e, &n).rawValue, privacy: .public))")
@@ -211,7 +273,7 @@ final class AppConnection {
         }
         elements[id] = e
         watch(e, id)
-        return Reported(window: window, element: e)
+        return window
     }
 
     /// Window-level notifications carry the window ID as refcon: a destroyed

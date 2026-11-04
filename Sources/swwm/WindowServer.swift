@@ -40,6 +40,19 @@ enum WindowServer {
         return list(CGWindowListCopyWindowInfo(options, kCGNullWindowID))
     }
 
+    /// The window the window server would hand a click at `p` to: windows
+    /// that let the mouse through (the screenshot thumbnail's full-screen
+    /// window) do not count, as they do not for the mouse.
+    static func windowAt(_ p: CGPoint) -> WindowID? {
+        typealias Find = @convention(c) (Int32, Int32, Int32, Int32, UnsafeMutablePointer<CGPoint>,
+                                         UnsafeMutablePointer<CGPoint>, UnsafeMutablePointer<UInt32>, UnsafeMutablePointer<Int32>) -> Int32
+        guard let find = SkyLight.symbol("SLSFindWindowAndOwner", as: Find.self) else { return nil }
+        var point = p, local = CGPoint.zero
+        var id: UInt32 = 0, owner: Int32 = 0
+        guard find(SkyLight.connection, 0, 1, 0, &point, &local, &id, &owner) == 0, id != 0 else { return nil }
+        return id
+    }
+
     /// One window, on screen or not; nil when it is gone.
     static func window(_ id: WindowID) -> ServerWindow? {
         list(CGWindowListCopyWindowInfo(.optionIncludingWindow, id)).first

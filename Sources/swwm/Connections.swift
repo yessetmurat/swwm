@@ -23,6 +23,7 @@ final class Connections {
     private let map = OSAllocatedUnfairLock(initialState: [pid_t: AppConnection]())
     private var startPids: Set<pid_t> = []  // main: apps running when swwm started
     private var tokens: [NSObjectProtocol] = []
+    let focusTicket = FocusTicket()
 
     init(manager: Manager) {
         self.manager = manager
@@ -30,6 +31,18 @@ final class Connections {
 
     /// Any thread.
     func connection(_ pid: pid_t) -> AppConnection? { map.withLock { $0[pid] } }
+
+    // Workaround: a hung app never answers, and quit must finish; this bounds
+    // the wait for each app's queued writes.
+    static let quitFlush: TimeInterval = 2
+
+    /// Waits for every app's queued writes, all apps at once (quit).
+    func flush() {
+        let all = map.withLock { Array($0.values) }
+        let group = DispatchGroup()
+        for c in all { DispatchQueue.global().async(group: group) { c.flush(timeout: Self.quitFlush) } }
+        group.wait()
+    }
 
     func start() {
         Connections.current = self
@@ -80,7 +93,7 @@ final class Connections {
         let pid = app.processIdentifier
         let c = map.withLock { map in
             if let c = map[pid] { return c }
-            let c = AppConnection(app: app, ax: ax, events: manager, adopting: startPids.contains(pid))
+            let c = AppConnection(app: app, ax: ax, events: manager, adopting: startPids.contains(pid), focusTicket: focusTicket)
             map[pid] = c
             return c
         }
