@@ -48,13 +48,7 @@ struct AXWindow {
 
     /// Window server level: 0 for normal windows. System prompts (SecurityAgent
     /// sits at 1000), floating panels and overlays are above and never tiled.
-    var level: Int { Self.layer(of: id) ?? 0 }
-
-    /// A window's window-server layer; nil when the window is gone.
-    static func layer(of id: CGWindowID) -> Int? {
-        let info = CGWindowListCopyWindowInfo([.optionIncludingWindow], id) as? [[String: Any]]
-        return info?.first?[kCGWindowLayer as String] as? Int
-    }
+    var level: Int { WindowServer.window(id)?.layer ?? 0 }
 
     var isResizable: Bool {
         var settable: DarwinBoolean = false

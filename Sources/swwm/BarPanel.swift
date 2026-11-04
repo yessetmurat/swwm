@@ -65,13 +65,8 @@ final class BarPanel: NSPanel {
     /// SkyLight's window background blur; private
     /// but needs no SIP change. Missing symbol: no blur, tint only.
     private static func setBlurRadius(_ radius: Int32, of window: Int) {
-        typealias Main = @convention(c) () -> Int32
         typealias SetBlur = @convention(c) (Int32, UInt32, Int32) -> Int32
-        guard let sky = dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_LAZY),
-              let main = dlsym(sky, "SLSMainConnectionID"),
-              let set = dlsym(sky, "SLSSetWindowBackgroundBlurRadius") else { return }
-        let cid = unsafeBitCast(main, to: Main.self)()
-        _ = unsafeBitCast(set, to: SetBlur.self)(cid, UInt32(window), radius)
+        _ = SkyLight.symbol("SLSSetWindowBackgroundBlurRadius", as: SetBlur.self)?(SkyLight.connection, UInt32(window), radius)
     }
 
     private var fadeTimer: Timer?
@@ -118,14 +113,11 @@ final class BarPanel: NSPanel {
     private func menuState() -> (inPlace: Bool, dropdown: Bool) {
         let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
         let bar = CGRect(x: frame.minX, y: primaryHeight - frame.maxY, width: frame.width, height: frame.height)
-        let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
-        func layer(_ w: [String: Any]) -> Int? { w[kCGWindowLayer as String] as? Int }
-        let inPlace = list.contains { w in
-            layer(w) == Int(CGWindowLevelForKey(.mainMenuWindow))
-                && (w[kCGWindowBounds as String] as? NSDictionary).flatMap { CGRect(dictionaryRepresentation: $0) }
-                    .map { $0.intersects(bar) && $0.minY >= bar.minY } == true
+        let list = WindowServer.onScreen()
+        let inPlace = list.contains {
+            $0.layer == Int(CGWindowLevelForKey(.mainMenuWindow)) && $0.bounds.intersects(bar) && $0.bounds.minY >= bar.minY
         }
-        let dropdown = list.contains { layer($0) == Int(CGWindowLevelForKey(.popUpMenuWindow)) }
+        let dropdown = list.contains { $0.layer == Int(CGWindowLevelForKey(.popUpMenuWindow)) }
         return (inPlace, dropdown)
     }
 

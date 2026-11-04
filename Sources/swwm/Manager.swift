@@ -243,9 +243,9 @@ final class Manager {
             let subrole: String? = element.attribute(kAXSubroleAttribute)
             guard [kAXDialogSubrole as String, kAXSystemDialogSubrole as String].contains(subrole),
                   windows.values.contains(where: { $0.pid == pid && raised.contains($0.id) }),
-                  AXWindow.layer(of: id) == 0 else { return }  // never system prompts or overlays
+                  WindowServer.window(id)?.layer == 0 else { return }  // never system prompts or overlays
         }
-        for gone in raisedChildren.keys where AXWindow.layer(of: gone) == nil {
+        for gone in raisedChildren.keys where WindowServer.window(gone) == nil {
             raisedChildren[gone] = nil
             raised.remove(gone)
         }
@@ -813,35 +813,20 @@ final class Manager {
     /// The topmost visible window at `p` is Finder's desktop: a click there is
     /// a click on the desktop.
     private func desktopIsOnTop(at p: CGPoint) -> Bool {
-        let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
-        guard let top = list.first(where: { info in
-            guard (info[kCGWindowAlpha as String] as? Double ?? 1) > 0,
-                  let dict = info[kCGWindowBounds as String] as? NSDictionary,
-                  let r = CGRect(dictionaryRepresentation: dict) else { return false }
-            return r.contains(p)
-        }) else { return false }
-        return (top[kCGWindowLayer as String] as? Int) == Int(CGWindowLevelForKey(.desktopIconWindow))
-            && (top[kCGWindowOwnerName as String] as? String) == "Finder"
+        guard let top = WindowServer.onScreen().first(where: { $0.alpha > 0 && $0.bounds.contains(p) }) else { return false }
+        return top.layer == Int(CGWindowLevelForKey(.desktopIconWindow)) && top.owner == "Finder"
     }
 
     /// The topmost managed window under `p`, or nil when an unmanaged window is on top.
     func window(at p: CGPoint) -> WindowID? {
-        let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
-            as? [[String: Any]] ?? []
-        let me = Int(getpid())
-        for info in list {
-            guard let dict = info[kCGWindowBounds as String] as? NSDictionary,
-                  let r = CGRect(dictionaryRepresentation: dict), r.contains(p) else { continue }
+        let me = getpid()
+        for w in WindowServer.onScreen(excludingDesktop: true) where w.bounds.contains(p) {
             // swwm's own bar is on top here: nothing under it takes focus.
-            if (info[kCGWindowOwnerPID as String] as? Int) == me, (info[kCGWindowAlpha as String] as? Double ?? 1) > 0 {
-                return nil
-            }
-            let id = (info[kCGWindowNumber as String] as? Int).map(WindowID.init)
+            if w.pid == me, w.alpha > 0 { return nil }
             // Floating windows swwm raised, and their sheets, sit above layer 0.
-            let layer = info[kCGWindowLayer as String] as? Int
-            guard layer == 0 || (layer == Int(WindowLevel.floating) && id.map(raised.contains) == true) else { continue }
+            guard w.layer == 0 || (w.layer == Int(WindowLevel.floating) && raised.contains(w.id)) else { continue }
             // Hidden windows keep a sliver on screen; they must never take focus.
-            return id.flatMap { windows[$0] != nil && hidden[$0] == nil ? $0 : nil }
+            return windows[w.id] != nil && hidden[w.id] == nil ? w.id : nil
         }
         return nil
     }
