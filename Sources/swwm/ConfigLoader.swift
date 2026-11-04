@@ -91,21 +91,10 @@ final class ConfigLoader {
         }
     }
 
-    /// A non-modal alert: a modal one would block the event tap and freeze input.
     private func show(_ message: String) {
         guard message != shownError else { return }
         shownError = message
         alert?.window.orderOut(nil)
-        let a = NSAlert()
-        a.messageText = "swwm: config error"
-        a.informativeText = message + "\n\nThe previous config stays active."
-        a.addButton(withTitle: "OK")
-        a.buttons[0].target = a.window
-        a.buttons[0].action = #selector(NSWindow.orderOut(_:))
-        a.layout()
-        a.window.level = .floating
-        a.window.center()
-        a.window.orderFrontRegardless()
-        alert = a
+        alert = Notice.show(title: "swwm: config error", message: message + "\n\nThe previous config stays active.")
     }
 }

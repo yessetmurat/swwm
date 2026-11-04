@@ -14,3 +14,10 @@ jobs:
         run: swift build
       - name: Test
         run: swift test
+      - name: Dock module
+        run: |
+          xcrun clang osax/payload.m -shared -fPIC -O2 -Wall -Wextra -Werror -fvisibility=hidden -arch arm64e \
+            -mmacosx-version-min=15.0 -F/System/Library/PrivateFrameworks -framework SkyLight -framework Foundation \
+            -o "$RUNNER_TEMP/payload"
+          xcrun clang osax/loader.m -O2 -Wall -Werror -arch arm64e -mmacosx-version-min=15.0 \
+            -framework Cocoa -framework SystemConfiguration -o "$RUNNER_TEMP/loader"

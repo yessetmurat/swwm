@@ -84,21 +84,10 @@ final class DockClient {
 
     /// A connected socket, or -1.
     private static func connect(to path: String) -> Int32 {
-        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        let fd = Socket.make()
         guard fd >= 0 else { return -1 }
-        var on: Int32 = 1
-        setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
-        var tv = timeval(tv_sec: 0, tv_usec: 200_000)
-        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
-        setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
-
-        var addr = sockaddr_un()
-        addr.sun_family = sa_family_t(AF_UNIX)
-        withUnsafeMutableBytes(of: &addr.sun_path) { dst in
-            path.utf8CString.withUnsafeBytes { src in
-                dst.copyMemory(from: UnsafeRawBufferPointer(rebasing: src.prefix(dst.count - 1)))
-            }
-        }
+        Socket.setTimeout(fd, seconds: 0.2)
+        var addr = Socket.address(path: path)
         let connected = withUnsafePointer(to: &addr) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
         }

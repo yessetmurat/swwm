@@ -14,7 +14,7 @@ enum Socket {
 
     static var path: String { (NSTemporaryDirectory() as NSString).appendingPathComponent("swwm.sock") }
 
-    static func address() -> sockaddr_un {
+    static func address(path: String = path) -> sockaddr_un {
         var a = sockaddr_un()
         a.sun_family = sa_family_t(AF_UNIX)
         withUnsafeMutableBytes(of: &a.sun_path) { dst in
@@ -33,9 +33,11 @@ enum Socket {
         return fd
     }
 
+    /// For reads and writes.
     static func setTimeout(_ fd: Int32, seconds: Double) {
         var tv = timeval(tv_sec: Int(seconds), tv_usec: Int32((seconds - Double(Int(seconds))) * 1_000_000))
         setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+        setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
     }
 
     /// Reads until EOF (or, with `untilNewline`, the first newline). nil on timeout or error.

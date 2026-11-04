@@ -16,7 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var bar: BarController?
     private var status: SystemStatus?
     private var server: CommandServer?
-    private var shadowAlert: NSAlert?
+    private var notices: [NSAlert] = []  // kept while on screen; a run shows at most two
     private var loader: ConfigLoader?
     private var signals: [DispatchSourceSignal] = []
     private var displayChange: DispatchWorkItem?
@@ -127,19 +127,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// A non-modal panel (a modal one would block the event tap).
     private func notify(_ message: String) {
-        let a = NSAlert()
-        a.messageText = "swwm"
-        a.informativeText = message
-        a.addButton(withTitle: "OK")
-        a.buttons[0].target = a.window
-        a.buttons[0].action = #selector(NSWindow.orderOut(_:))
-        a.layout()
-        a.window.level = .floating
-        a.window.center()
-        a.window.orderFrontRegardless()
-        shadowAlert = a
+        notices.append(Notice.show(title: "swwm", message: message))
     }
 
     func applicationWillTerminate(_ notification: Notification) {
