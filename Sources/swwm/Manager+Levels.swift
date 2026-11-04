@@ -40,8 +40,8 @@ extension Manager {
             send(levels.gone(id))
         case .moved(let id):
             windowMoved(id)
-        case .resized:
-            break
+        case .resized(let id):
+            windowResized(id)
         }
     }
 
