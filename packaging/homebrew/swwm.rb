@@ -33,7 +33,6 @@ class Swwm < Formula
       Optional Dock module: removes window shadows and keeps floating windows
       above tiled ones (needs SIP partly disabled):
         sudo swwm --install-dock-module
-      Re-run it after upgrading swwm, then killall Dock.
     EOS
   end
 

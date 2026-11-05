@@ -130,7 +130,7 @@ works fully without it. To undo later, boot into recoveryOS and run
 `csrutil enable`, then `sudo nvram -d boot-args` from macOS.
 
 ```sh
-sudo swwm --install-dock-module     # installs a root launchd daemon; re-run after upgrading swwm
+sudo swwm --install-dock-module     # installs a root launchd daemon
 sudo swwm --uninstall-dock-module
 ```
 
