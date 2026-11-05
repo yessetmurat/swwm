@@ -19,6 +19,11 @@ extension Manager {
     static let refusalCheck = 0.3       // after settle: still not its tile's size
     static let startRefusalCheck = 0.5  // after the first layout at start
 
+    // Workaround: a window can cut size changes short for a while after it
+    // opens (Windows App's session window: 0.25 s to over 0.4 s), and no event
+    // says when that ends; these waits are the asking again.
+    static let shortTileWaits = [0.2, 0.3, 0.5, 1.0]
+
     func windowCreated(_ new: AppWindow) {
         let id = new.id
 
@@ -146,28 +151,62 @@ extension Manager {
         setFrame(id, r)
     }
 
-    /// A tiled window that does not take its tile's size (a fixed-size dialog)
-    /// would overlap its neighbors: it floats instead. 20pt of slack for
-    /// windows that size in steps. Only this window: the next one of its kind
-    /// may fit its tile.
-    func floatIfRefused(_ id: WindowID) {
-        settling.remove(id)
-        let start = opened.removeValue(forKey: id)
-
+    /// A tiled window larger than its tile (a fixed-size dialog) would overlap
+    /// its neighbors: it floats instead. One smaller covers nothing: it stays
+    /// and is asked again, not while the user drags, and keeps the size it
+    /// ends up with. Only this window: the next one of its kind may fit its tile.
+    func floatIfRefused(_ id: WindowID, attempt: Int = 0) {
         readFrame(id) { [weak self] now in
-            guard let self,
-                  let now,
-                  self.world.isVisible(id),
-                  let ws = self.world.workspace(containing: id),
-                  ws.zoomed != id,
-                  ws.tree.contains(id),
-                  let r = self.world.shownFrame(of: id),
-                  !near(CGRect(origin: .zero, size: now.size), CGRect(origin: .zero, size: r.size), tolerance: 20) else {
+            guard let self else {
                 return
             }
 
-            self.makeFloating(id, frame: start ?? now, because: "it kept \(now.size), not its tile's \(r.size)")
+            guard self.world.isVisible(id),
+                  let ws = self.world.workspace(containing: id),
+                  ws.zoomed != id,
+                  self.zooming[id] == nil,
+                  ws.tree.contains(id),
+                  let r = self.world.shownFrame(of: id) else {
+                self.settled(id)
+                return
+            }
+
+            guard let now else {
+                self.tileAgain(id, r, attempt: attempt)  // a busy app did not answer
+                return
+            }
+
+            switch tileFit(window: now.size, tile: r.size) {
+            case .fits:
+                self.settled(id)
+            case .overflows:
+                let start = self.settled(id)
+                self.makeFloating(id, frame: start ?? now, because: "it kept \(now.size), not its tile's \(r.size)")
+            case .short:
+                self.tileAgain(id, r, attempt: attempt)
+            }
         }
+    }
+
+    /// Writes the tile again and checks once more, until the waits run out.
+    private func tileAgain(_ id: WindowID, _ r: CGRect, attempt: Int) {
+        guard attempt < Self.shortTileWaits.count else {
+            settled(id)
+            return
+        }
+
+        if !CGEventSource.buttonState(.combinedSessionState, button: .left) { setFrame(id, r) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.shortTileWaits[attempt]) { [weak self] in
+            self?.floatIfRefused(id, attempt: attempt + 1)
+        }
+    }
+
+    /// The size check is over; returns where the app opened the window.
+    @discardableResult
+    private func settled(_ id: WindowID) -> CGRect? {
+        settling.remove(id)
+
+        return opened.removeValue(forKey: id)
     }
 
     /// Floats a tiled window at `frame`: where the app opened it, as a tile
