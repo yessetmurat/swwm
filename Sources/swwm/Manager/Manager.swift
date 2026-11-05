@@ -28,6 +28,7 @@ final class Manager: AppEvents {
     let dock = DockClient()
     var dockModuleInstalled = false                        // set at start from DockModuleInstaller.isInstalled
     private var shadowNoticeShown = false
+    private var dockAwaited = false                        // asking until the Dock module answers
     var onShadowUnavailable: () -> Void = {}
     var levels = FloatingLevels()                          // windows swwm put at the floating level
     var levelNoticeShown = false
@@ -192,20 +193,43 @@ final class Manager: AppEvents {
             return
         }
 
-        dock.setShadow(id, want) { [weak self] ok in
-            guard let self,
-                  !ok,
-                  self.dockModuleInstalled,
-                  !self.shadowNoticeShown else {
+        dock.setShadow(id, want) { [weak self] reply in
+            guard let self, reply == .unreachable, self.dockModuleInstalled else {
                 return
             }
-            self.shadowNoticeShown = true
-            self.onShadowUnavailable()
+
+            self.awaitDock()
         }
     }
 
     func applyShadowAll() {
         for id in windows.keys { applyShadow(id) }
+    }
+
+    /// The Dock module is not there yet (a new Dock, or swwm started before
+    /// the loader injected it): every window gets its shadow and level once
+    /// it answers. The notice is for a module that never does.
+    func awaitDock() {
+        guard !dockAwaited else {
+            return
+        }
+
+        dockAwaited = true
+        dock.whenReachable { [weak self] reached in
+            guard let self else {
+                return
+            }
+
+            self.dockAwaited = false
+
+            if reached {
+                self.applyShadowAll()
+                self.applyLevelAll()  // windows an older payload turned down, after a re-install
+            } else if self.dockModuleInstalled, !self.shadowNoticeShown {
+                self.shadowNoticeShown = true
+                self.onShadowUnavailable()
+            }
+        }
     }
 
     /// Removes a window; when it had focus, focus goes to another window of the same display.

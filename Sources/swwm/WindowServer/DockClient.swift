@@ -27,10 +27,10 @@ final class DockClient {
     private var path: String { (NSTemporaryDirectory() as NSString).appendingPathComponent(DockSocket.name) }
 
     /// Off the main thread; `done` (if given) runs on the main queue.
-    func setShadow(_ id: WindowID, _ shadow: Bool, done: ((Bool) -> Void)? = nil) {
+    func setShadow(_ id: WindowID, _ shadow: Bool, done: ((Reply) -> Void)? = nil) {
         queue.async { [path] in
-            let ok = Self.send(shadowMessage(window: id, shadow: shadow), to: path) == .done
-            if let done { DispatchQueue.main.async { done(ok) } }
+            let reply = Self.send(shadowMessage(window: id, shadow: shadow), to: path)
+            if let done { DispatchQueue.main.async { done(reply) } }
         }
     }
 
@@ -60,18 +60,22 @@ final class DockClient {
     /// restart the loader injects it a few seconds later. Asks with a request
     /// every payload reads in full and turns down (window 0), never a bare
     /// connect: an older payload dies of a connection closed before its reply.
-    /// Gives up after `timeout` seconds.
-    func whenReachable(timeout: TimeInterval = 30, _ done: @escaping () -> Void) {
-        queue.async { [path] in
-            let end = Date().addingTimeInterval(timeout)
+    /// Gives up after `timeout` seconds; `done` tells which, on the main queue.
+    func whenReachable(timeout: TimeInterval = 30, _ done: @escaping (Bool) -> Void) {
+        ask(until: Date().addingTimeInterval(timeout), done)
+    }
 
-            while Date() < end {
-                if Self.send(shadowMessage(window: 0, shadow: true), to: path) != .unreachable {
-                    DispatchQueue.main.async(execute: done)
-                    return
-                }
-                Thread.sleep(forTimeInterval: Self.reachableRetry)
+    /// Requests sent meanwhile go ahead: the queue is not held between asks.
+    private func ask(until end: Date, _ done: @escaping (Bool) -> Void) {
+        queue.async { [self, path] in
+            let reached = Self.send(shadowMessage(window: 0, shadow: true), to: path) != .unreachable
+
+            guard !reached, Date() < end else {
+                DispatchQueue.main.async { done(reached) }
+                return
             }
+
+            queue.asyncAfter(deadline: .now() + Self.reachableRetry) { [self] in ask(until: end, done) }
         }
     }
 

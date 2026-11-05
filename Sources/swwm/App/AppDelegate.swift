@@ -107,12 +107,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
 
-            DispatchQueue.main.async {
-                manager.dock.whenReachable {
-                    manager.applyShadowAll()
-                    manager.applyLevelAll()  // windows an older payload turned down, after a re-install
-                }
-            }
+            DispatchQueue.main.async { manager.awaitDock() }
         }
 
         connections.start()

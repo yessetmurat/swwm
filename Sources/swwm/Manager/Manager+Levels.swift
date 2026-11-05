@@ -79,6 +79,8 @@ extension Manager {
                 }
 
                 self.levels.failed(c)  // asked again on the next change or Dock restart
+                if reply == .unreachable, self.dockModuleInstalled { self.awaitDock() }
+
                 // Unreachable is the shadow notice's case; turned down means an older payload.
                 guard reply == .rejected, self.dockModuleInstalled, !self.levelNoticeShown else {
                     return
