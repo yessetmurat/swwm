@@ -56,7 +56,4 @@ public struct AppWindow: Equatable, Sendable {
     }
 
     public var isStandard: Bool { role == "AXWindow" && subrole == "AXStandardWindow" }
-
-    /// Finder lists its desktop as a scroll area.
-    public var isFinderDesktop: Bool { role == "AXScrollArea" }
 }

@@ -796,9 +796,9 @@ final class Manager: AppEvents {
 
     /// An app's windows: on connecting (`adopting` for an app that ran when
     /// swwm started) and on unhide. Known ones are skipped.
-    func appWindows(_ found: [AppWindow], pid: pid_t, adopting: Bool) {
+    func appWindows(_ found: [AppWindow], pid: pid_t, adopting: Bool, listsDesktop: Bool) {
         if NSRunningApplication(processIdentifier: pid)?.bundleIdentifier == "com.apple.finder" {
-            finderHasDesktop = found.contains { $0.isFinderDesktop }
+            finderHasDesktop = listsDesktop
         }
 
         guard adopting else {

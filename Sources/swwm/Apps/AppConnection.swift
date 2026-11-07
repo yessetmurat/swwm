@@ -105,11 +105,25 @@ final class AppConnection {
             return
         }
 
-        let found = listed()
+        let list = listedElements()
+        let found = reports(of: list)
+        // Finder lists its desktop as a scroll area with no window number, so
+        // it has no report.
+        let desktop = list.contains { e in
+            guard Self.windowID(e) == nil else {
+                return false
+            }
+
+            let role: String? = Self.patiently(e) { e.attribute(kAXRoleAttribute) }
+            return role == kAXScrollAreaRole
+        }
+
         let adopt = adopting && !reported
         reported = true
 
-        DispatchQueue.main.async { [self] in events?.appWindows(found, pid: pid, adopting: adopt) }
+        DispatchQueue.main.async { [self] in
+            events?.appWindows(found, pid: pid, adopting: adopt, listsDesktop: desktop)
+        }
     }
 
     /// Reports the app's focused window (the app was activated).
@@ -275,11 +289,17 @@ final class AppConnection {
     // MARK: - Queue
 
     /// The app's listed windows, as reports. Queue.
-    private func listed() -> [AppWindow] {
-        let el = AXUIElementCreateApplication(pid)
-        let list: [AXUIElement] = Self.patiently(el) { el.attribute(kAXWindowsAttribute) ?? [] }
-        let ids = Set(list.compactMap(Self.windowID))
+    private func listed() -> [AppWindow] { reports(of: listedElements()) }
 
+    /// The app's window list as it gives it. Queue.
+    private func listedElements() -> [AXUIElement] {
+        let el = AXUIElementCreateApplication(pid)
+        return Self.patiently(el) { el.attribute(kAXWindowsAttribute) ?? [] }
+    }
+
+    /// Reports for the elements that have a window number. Queue.
+    private func reports(of list: [AXUIElement]) -> [AppWindow] {
+        let ids = Set(list.compactMap(Self.windowID))
         return list.compactMap { report($0, listed: ids) }
     }
 

@@ -20,7 +20,8 @@ enum WindowWrite: Sendable {
 /// order.
 protocol AppEvents: AnyObject {
 
-    func appWindows(_ found: [AppWindow], pid: pid_t, adopting: Bool)
+    /// `listsDesktop`: the app lists a desktop among its windows (Finder).
+    func appWindows(_ found: [AppWindow], pid: pid_t, adopting: Bool, listsDesktop: Bool)
     func windowAppeared(_ w: AppWindow)
     func windowGone(_ id: WindowID, listed: [AppWindow])
     func windowMinimized(_ id: WindowID)
