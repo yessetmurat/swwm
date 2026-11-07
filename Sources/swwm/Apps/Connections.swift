@@ -23,6 +23,7 @@ final class Connections {
     private let map = OSAllocatedUnfairLock(initialState: [pid_t: AppConnection]())
     private var startPids: Set<pid_t> = []  // main: apps running when swwm started
     private var tokens: [NSObjectProtocol] = []
+    private var runningWatch: NSKeyValueObservation?  // apps leaving the running list
     let focusTicket = FocusTicket()
     private let screen = ScreenLock()
 
@@ -80,14 +81,16 @@ final class Connections {
         on(NSWorkspace.didLaunchApplicationNotification) { [weak self] app in
             if app.isManageable { self?.connect(app) }
         }
-        on(NSWorkspace.didTerminateApplicationNotification) { [weak self] app in
-            guard let self else {
+        // Not `didTerminateApplicationNotification`: macOS does not post it for
+        // every app (Home). The list changes only on the main run loop; a quit
+        // app's pid reads -1, so the connections' own apps tell which quit.
+        runningWatch = NSWorkspace.shared.observe(\.runningApplications) { [weak self] _, change in
+            guard let self, change.kind == .removal else {
                 return
             }
 
-            let pid = app.processIdentifier
-            if let c = map.withLock({ $0.removeValue(forKey: pid) }) { ax.perform { c.disconnect() } }
-            events.appTerminated(pid)
+            let gone = map.withLock { $0.filter { $0.value.app.isTerminated }.keys }
+            for pid in gone { terminated(pid) }
         }
         on(NSWorkspace.didHideApplicationNotification) { [weak self] app in
             self?.events.appHidden(app.processIdentifier)
@@ -116,6 +119,12 @@ final class Connections {
         }
 
         connect(app)
+    }
+
+    /// The app quit. Main.
+    private func terminated(_ pid: pid_t) {
+        if let c = map.withLock({ $0.removeValue(forKey: pid) }) { ax.perform { c.disconnect() } }
+        events.appTerminated(pid)
     }
 
     /// Main.
