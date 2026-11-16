@@ -84,16 +84,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             bar.setNeedsUpdate()
             manager?.publishSoon()
         }
-        tap.onMouseMoved = { bar.cursorMoved($0) }
+        tap.onBarAside = { m, aside in bar.setAside(aside, on: m) }
         manager.onReload = { loader.reload() }
         manager.onQuit = { NSApp.terminate(nil) }
 
         tap.update(config: config)
-        WindowServer.start {
-            manager.serverEvent($0)
-            connections.serverEvent($0)
+        WindowServer.start { event in
+            // A new window is read once, for both.
+            var added: ServerWindow?
+            if case .added(let id) = event { added = WindowServer.window(id) }
+
+            manager.serverEvent(event, added: added)
+            if let added { connections.windowAdded(added) }
         }
         manager.start()
+        tap.update(displays: manager.world.monitors)
         bar.rebuild()
 
         let status = SystemStatus { bar.update(status: $0) }
@@ -125,6 +130,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.displayChange?.cancel()
             let item = DispatchWorkItem {
                 manager.displaysChanged()
+                tap.update(displays: manager.world.monitors)
                 bar.rebuild()
             }
             self?.displayChange = item

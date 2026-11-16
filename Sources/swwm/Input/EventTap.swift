@@ -30,7 +30,9 @@ final class EventTap {
     private var drag: Drag?
     private var press: (window: WindowID, frame: CGRect, point: CGPoint, clicks: Int)?  // plain left press on a managed window
     private var lastHover = Date.distantPast
-    var onMouseMoved: (CGPoint) -> Void = { _ in }
+    private var barAside: Set<MonitorID> = []  // displays whose bar stepped aside for the macOS menu
+    /// The bar of a display steps aside or comes back. Main.
+    var onBarAside: (MonitorID, Bool) -> Void = { _, _ in }
 
     init(manager: Manager) {
         self.manager = manager
@@ -42,6 +44,11 @@ final class EventTap {
             $0.bindings = bindings
             $0.settings = settings
         }
+    }
+
+    func update(displays: [MonitorInfo]) {
+        let frames = Dictionary(displays.map { ($0.id, $0.frame) }, uniquingKeysWith: { first, _ in first })
+        state.update { $0.displays = frames }
     }
 
     func start() {
@@ -82,109 +89,49 @@ final class EventTap {
             if let port { CGEvent.tapEnable(tap: port, enable: true) }
             return event
         case .keyDown:
-            let combo = KeyCombo(keyCode: UInt16(event.getIntegerValueField(.keyboardEventKeycode)),
-                                 modifiers: modifiers(event.flags))
-            guard let command = s.bindings[combo] else {
-                noteInput()
-                return event
-            }
-
-            // A key swwm takes reaches no app: focus that follows is the user's
-            // doing only when the command acts outside swwm (it may open an app).
-            if case .exec = command { noteInput() }
-
-            DispatchQueue.main.async { [manager] in manager.run(command) }
-            return nil
+            return keyDown(event, s)
         case .mouseMoved:
-            let p = event.location
-            DispatchQueue.main.async { [self] in onMouseMoved(p) }
-            hover(p, s)
+            stepBarAside(event.location, s)
+            hover(event.location, s)
             return event
         case .leftMouseDown, .rightMouseDown:
-            let p = event.location
-            let hit = s.window(at: p)
-            // A right click does not focus the window it hits.
-            noteInput(clickOn: type == .leftMouseDown ? hit : nil)
-
-            guard modifiers(event.flags) == s.settings.mouseModifier else {
-                // A plain press may start a title-bar move or an edge resize.
-                let clicks = Int(event.getIntegerValueField(.mouseEventClickState))
-                press = type == .leftMouseDown ? hit.flatMap { id in s.view.frames[id].map { (id, $0, p, clicks) } } : nil
-
-                // Marked before the app sees the press: macOS may zoom the window on it.
-                if let pr = press, pr.clicks == 2, inTitleBar(p, of: pr.frame) {
-                    DispatchQueue.main.async { [manager] in manager.titleDoubleClicked(pr.window) }
-                }
-
-                return event
-            }
-
-            guard let id = hit, let frame = s.view.frames[id] else {
-                return event
-            }
-
-            drag = Drag(
-                window: id,
-                resize: type == .rightMouseDown,
-                floating: s.view.floating.contains(id),
-                start: p,
-                frame: frame
-            )
-            DispatchQueue.main.async { [manager] in manager.pointerFocus(id, hover: false) }
-            return nil
+            return mouseDown(type, event, s)
         case .leftMouseDragged, .rightMouseDragged:
-            guard let d = drag else {
-                return event
-            }
-
-            // The app connection keeps only the newest of these writes.
-            let p = event.location
-            let dx = p.x - d.start.x, dy = p.y - d.start.y
-
-            if !d.resize {
-                DispatchQueue.main.async { [manager] in
-                    manager.setPosition(d.window, CGPoint(x: d.frame.minX + dx, y: d.frame.minY + dy))
-                }
-            } else if d.floating {
-                let r = CGRect(
-                    x: d.frame.minX,
-                    y: d.frame.minY,
-                    width: max(100, d.frame.width + dx),
-                    height: max(100, d.frame.height + dy)
-                )
-                DispatchQueue.main.async { [manager] in manager.setFrame(d.window, r) }
-            }
-            return nil
+            return mouseDragged(event)
         case .leftMouseUp, .rightMouseUp:
-            let p = event.location
-            guard let d = drag else {
-                if type == .leftMouseUp, let pr = press {
-                    DispatchQueue.main.async { [self] in
-                        nativeDragEnded(
-                            pr.window,
-                            from: pr.frame,
-                            pressedAt: pr.point,
-                            clicks: pr.clicks,
-                            at: p
-                        )
-                    }
-                }
-                press = nil
-                return event
-            }
-
-            drag = nil
-            DispatchQueue.main.async { [manager] in
-                if d.resize {
-                    manager.resized(d.window, by: CGSize(width: p.x - d.start.x, height: p.y - d.start.y))
-                } else {
-                    manager.dropped(d.window, at: p)
-                }
-            }
-            return nil
+            return mouseUp(type, event)
         default:
             return event
         }
+    }
+
+    // MARK: - Keys
+
+    private func keyDown(_ event: CGEvent, _ s: TapState) -> CGEvent? {
+        let combo = KeyCombo(keyCode: UInt16(event.getIntegerValueField(.keyboardEventKeycode)),
+                             modifiers: modifiers(event.flags))
+        guard let command = s.bindings[combo] else {
+            noteInput()
+            return event
+        }
+
+        // A key swwm takes reaches no app: focus that follows is the user's
+        // doing only when the command acts outside swwm (it may open an app).
+        if case .exec = command { noteInput() }
+
+        DispatchQueue.main.async { [manager] in manager.run(command) }
+        return nil
+    }
+
+    private func modifiers(_ flags: CGEventFlags) -> Modifiers {
+        var m: Modifiers = []
+
+        if flags.contains(.maskShift) { m.insert(.shift) }
+        if flags.contains(.maskControl) { m.insert(.ctrl) }
+        if flags.contains(.maskAlternate) { m.insert(.alt) }
+        if flags.contains(.maskCommand) { m.insert(.cmd) }
+
+        return m
     }
 
     /// A key press: focus that follows it is the user's doing.
@@ -197,6 +144,96 @@ final class EventTap {
     private func noteInput(clickOn id: WindowID?) {
         let now = Date()
         DispatchQueue.main.async { [manager] in manager.noteInput(at: now, click: true, on: id) }
+    }
+
+    // MARK: - Buttons
+
+    private func mouseDown(_ type: CGEventType, _ event: CGEvent, _ s: TapState) -> CGEvent? {
+        let p = event.location
+        let hit = s.window(at: p)
+        // A right click does not focus the window it hits.
+        noteInput(clickOn: type == .leftMouseDown ? hit : nil)
+
+        guard modifiers(event.flags) == s.settings.mouseModifier else {
+            // A plain press may start a title-bar move or an edge resize.
+            let clicks = Int(event.getIntegerValueField(.mouseEventClickState))
+            press = type == .leftMouseDown ? hit.flatMap { id in s.view.frames[id].map { (id, $0, p, clicks) } } : nil
+
+            // Marked before the app sees the press: macOS may zoom the window on it.
+            if let pr = press, pr.clicks == 2, inTitleBar(p, of: pr.frame) {
+                DispatchQueue.main.async { [manager] in manager.titleDoubleClicked(pr.window) }
+            }
+
+            return event
+        }
+
+        guard let id = hit, let frame = s.view.frames[id] else {
+            return event
+        }
+
+        drag = Drag(
+            window: id,
+            resize: type == .rightMouseDown,
+            floating: s.view.floating.contains(id),
+            start: p,
+            frame: frame
+        )
+        DispatchQueue.main.async { [manager] in manager.pointerFocus(id, hover: false) }
+        return nil
+    }
+
+    private func mouseDragged(_ event: CGEvent) -> CGEvent? {
+        guard let d = drag else {
+            return event
+        }
+
+        // The app connection keeps only the newest of these writes.
+        let p = event.location
+        let dx = p.x - d.start.x, dy = p.y - d.start.y
+
+        if !d.resize {
+            DispatchQueue.main.async { [manager] in
+                manager.setPosition(d.window, CGPoint(x: d.frame.minX + dx, y: d.frame.minY + dy))
+            }
+        } else if d.floating {
+            let r = CGRect(
+                x: d.frame.minX,
+                y: d.frame.minY,
+                width: max(100, d.frame.width + dx),
+                height: max(100, d.frame.height + dy)
+            )
+            DispatchQueue.main.async { [manager] in manager.setFrame(d.window, r) }
+        }
+        return nil
+    }
+
+    private func mouseUp(_ type: CGEventType, _ event: CGEvent) -> CGEvent? {
+        let p = event.location
+        guard let d = drag else {
+            if type == .leftMouseUp, let pr = press {
+                DispatchQueue.main.async { [self] in
+                    nativeDragEnded(
+                        pr.window,
+                        from: pr.frame,
+                        pressedAt: pr.point,
+                        clicks: pr.clicks,
+                        at: p
+                    )
+                }
+            }
+            press = nil
+            return event
+        }
+
+        drag = nil
+        DispatchQueue.main.async { [manager] in
+            if d.resize {
+                manager.resized(d.window, by: CGSize(width: p.x - d.start.x, height: p.y - d.start.y))
+            } else {
+                manager.dropped(d.window, at: p)
+            }
+        }
+        return nil
     }
 
     /// The window was moved by its title bar or resized by an edge without
@@ -227,15 +264,27 @@ final class EventTap {
         }
     }
 
-    private func modifiers(_ flags: CGEventFlags) -> Modifiers {
-        var m: Modifiers = []
+    // MARK: - Movement
 
-        if flags.contains(.maskShift) { m.insert(.shift) }
-        if flags.contains(.maskControl) { m.insert(.ctrl) }
-        if flags.contains(.maskAlternate) { m.insert(.alt) }
-        if flags.contains(.maskCommand) { m.insert(.cmd) }
+    /// The bar of a display steps aside while the macOS menu bar is revealed
+    /// there. Decided here: the main thread hears of a change only, not of
+    /// every mouse move. Tap thread.
+    private func stepBarAside(_ p: CGPoint, _ s: TapState) {
+        for (m, frame) in s.displays {
+            let was = barAside.contains(m)
+            let now = barHidden(
+                cursor: p,
+                display: frame,
+                barHeight: s.settings.barHeight,
+                hidden: was
+            )
+            guard now != was else {
+                continue
+            }
 
-        return m
+            if now { barAside.insert(m) } else { barAside.remove(m) }
+            DispatchQueue.main.async { [self] in onBarAside(m, now) }
+        }
     }
 
     /// Focus follows mouse with autoraise. Throttled; paused right after

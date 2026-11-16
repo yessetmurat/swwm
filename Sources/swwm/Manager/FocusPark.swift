@@ -64,7 +64,7 @@ final class FocusPark {
             return
         }
 
-        let r = Displays.appKitRect(m.frame)
+        let r = Displays.flipped(m.frame)
         panel.setFrameOrigin(NSPoint(x: r.midX, y: r.midY))
 
         // NSApp.activate() is cooperative and leaves the other app frontmost;

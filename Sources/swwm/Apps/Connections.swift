@@ -26,6 +26,7 @@ final class Connections {
     private var runningWatch: NSKeyValueObservation?  // apps leaving the running list
     let focusTicket = FocusTicket()
     private let screen = ScreenLock()
+    private let managed = OSAllocatedUnfairLock(initialState: Set<WindowID>())  // the windows swwm manages now
 
     init(events: AppEvents) {
         self.events = events
@@ -33,6 +34,9 @@ final class Connections {
 
     /// Any thread.
     func connection(_ pid: pid_t) -> AppConnection? { map.withLock { $0[pid] } }
+
+    /// The windows swwm manages now: their apps report their focus by ID alone.
+    func setManaged(_ ids: Set<WindowID>) { managed.withLock { $0 = ids } }
 
     // Workaround: a hung app never answers, and quit must finish; this bounds
     // the wait for each app's queued writes.
@@ -115,11 +119,8 @@ final class Connections {
 
     /// A window reached the screen: an app with no connection yet, or one
     /// that gave no answer before, is asked again.
-    func serverEvent(_ e: WindowServerEvent) {
-        guard case .added(let id) = e,
-              let pid = WindowServer.window(id)?.pid,
-              let app = NSRunningApplication(processIdentifier: pid),
-              app.isManageable else {
+    func windowAdded(_ w: ServerWindow) {
+        guard let app = NSRunningApplication(processIdentifier: w.pid), app.isManageable else {
             return
         }
 
@@ -144,7 +145,8 @@ final class Connections {
                 events: events,
                 adopting: startPids.contains(pid),
                 focusTicket: focusTicket,
-                screen: screen
+                screen: screen,
+                isManaged: { [managed] id in managed.withLock { $0.contains(id) } }
             )
             map[pid] = c
             return c

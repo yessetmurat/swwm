@@ -32,6 +32,7 @@ final class AppConnection {
     private var answers = AnswerWatch()            // queue
     private let focusTicket: FocusTicket
     private let screen: ScreenLock
+    private let isManaged: @Sendable (WindowID) -> Bool  // any thread: swwm manages the window now
     /// How long a call waits for the app's answer: only a hung app takes this long.
     // Workaround: nothing tells swwm that an app hangs (the window server's
     // unresponsive-app query said no for a stopped and for a hung app in a
@@ -45,9 +46,11 @@ final class AppConnection {
         events: AppEvents,
         adopting: Bool,
         focusTicket: FocusTicket,
-        screen: ScreenLock
+        screen: ScreenLock,
+        isManaged: @escaping @Sendable (WindowID) -> Bool
     ) {
         self.screen = screen
+        self.isManaged = isManaged
         self.app = app
         self.ax = ax
         self.events = events
@@ -131,10 +134,20 @@ final class AppConnection {
         queue.async { [self] in
             let el = AXUIElementCreateApplication(pid)
             let win: AXUIElement? = Self.patiently(el) { el.attribute(kAXFocusedWindowAttribute) }
-            let w = win.flatMap { report($0) }
+            let focus = win.map(focusReport) ?? .none
 
-            DispatchQueue.main.async { [self] in events?.focusChanged(w, pid: pid) }
+            DispatchQueue.main.async { [self] in events?.focusChanged(focus, pid: pid) }
         }
+    }
+
+    /// The window a focus report names. One swwm manages is told by its ID
+    /// alone: focus moves often, and a full report asks the app a dozen
+    /// questions the manager has no use for. Queue.
+    private func focusReport(_ e: AXUIElement) -> FocusReport {
+        let id = Self.windowID(e)
+        if let id, isManaged(id) { return .managed(id) }
+
+        return report(e, id: id).map(FocusReport.window) ?? .none
     }
 
     /// The window's frame as the app has it now; nil for a window it no
@@ -258,8 +271,8 @@ final class AppConnection {
 
                 DispatchQueue.main.async { [self] in events?.windowAppeared(w) }
             case kAXFocusedWindowChangedNotification, kAXMainWindowChangedNotification:
-                let w = report(element)
-                DispatchQueue.main.async { [self] in events?.focusChanged(w, pid: pid) }
+                let focus = focusReport(element)
+                DispatchQueue.main.async { [self] in events?.focusChanged(focus, pid: pid) }
             case kAXUIElementDestroyedNotification:
                 guard let id else {
                     return
@@ -304,9 +317,10 @@ final class AppConnection {
     }
 
     /// One window as a report, watched from now on; nil for one whose close
-    /// swwm would not see. `listed` nil: read the app's list too. Queue.
-    private func report(_ e: AXUIElement, among listed: Set<WindowID>? = nil) -> AppWindow? {
-        guard let id = Self.windowID(e) else {
+    /// swwm would not see. `known`: its window number when the caller has it
+    /// already. `listed` nil: read the app's list too. Queue.
+    private func report(_ e: AXUIElement, id known: WindowID? = nil, among listed: Set<WindowID>? = nil) -> AppWindow? {
+        guard let id = known ?? Self.windowID(e) else {
             var n: CGWindowID = 0
             log.debug("\(self.app.localizedName ?? "?", privacy: .public): no window number (\(_AXUIElementGetWindow(e, &n).rawValue, privacy: .public))")
             return nil

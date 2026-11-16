@@ -41,6 +41,22 @@ enum Socket {
         return fd
     }
 
+    /// Connects `fd` to the socket at `path`.
+    static func connect(_ fd: Int32, to path: String = path) -> Bool {
+        var addr = address(path: path)
+        return withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+        } == 0
+    }
+
+    /// Binds `fd` to the socket at `path`.
+    static func bind(_ fd: Int32, to path: String = path) -> Bool {
+        var addr = address(path: path)
+        return withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+        } == 0
+    }
+
     /// For reads and writes.
     static func setTimeout(_ fd: Int32, seconds: Double) {
         var tv = timeval(tv_sec: Int(seconds), tv_usec: Int32((seconds - Double(Int(seconds))) * 1_000_000))

@@ -120,11 +120,7 @@ final class DockClient {
         }
 
         Socket.setTimeout(fd, seconds: 0.2)
-        var addr = Socket.address(path: path)
-        let connected = withUnsafePointer(to: &addr) {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
-        }
-        guard connected == 0 else {
+        guard Socket.connect(fd, to: path) else {
             close(fd)
             return -1
         }

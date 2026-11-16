@@ -32,7 +32,7 @@ final class BarPanel: NSPanel {
         )
         // At the menu bar's own level: below it, the (invisible) menu bar window
         // takes every click. The bar steps aside when the menu is revealed
-        // (BarController.cursorMoved).
+        // (BarController.setAside).
         level = .statusBar
         collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
         hasShadow = false
@@ -129,13 +129,7 @@ final class BarPanel: NSPanel {
 
     /// Is the macOS menu bar fully in place over this bar, and is a dropdown menu open?
     private func menuState() -> (inPlace: Bool, dropdown: Bool) {
-        let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
-        let bar = CGRect(
-            x: frame.minX,
-            y: primaryHeight - frame.maxY,
-            width: frame.width,
-            height: frame.height
-        )
+        let bar = Displays.flipped(frame)
 
         let list = WindowServer.onScreen()
         let inPlace = list.contains {

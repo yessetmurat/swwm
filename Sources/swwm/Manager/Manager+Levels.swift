@@ -42,10 +42,12 @@ extension Manager {
         for id in windows.keys { applyLevel(id) }
     }
 
-    func serverEvent(_ e: WindowServerEvent) {
+    /// `added`: the window of an `.added` event, as the window server has it
+    /// (nil when it is gone again already).
+    func serverEvent(_ e: WindowServerEvent, added w: ServerWindow?) {
         switch e {
         case .added(let id):
-            guard let w = WindowServer.window(id) else {
+            guard let w else {
                 return
             }
 

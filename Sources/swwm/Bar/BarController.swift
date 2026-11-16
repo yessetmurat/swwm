@@ -20,7 +20,6 @@ final class BarController {
         volume: nil
     )
     private var scheduled = false
-    private var steppedAside: Set<MonitorID> = []
     private var rendered: [MonitorID: (BarState, Status, BarStyle)] = [:]  // what each panel shows
 
     init(manager: Manager) {
@@ -39,7 +38,7 @@ final class BarController {
 
         let height = manager.world.config.settings.barHeight
         for m in monitors {
-            let frame = Displays.appKitRect(CGRect(
+            let frame = Displays.flipped(CGRect(
                 x: m.frame.minX,
                 y: m.frame.minY,
                 width: m.frame.width,
@@ -55,28 +54,10 @@ final class BarController {
         redraw()
     }
 
-    /// Hides the bar of a display while the macOS menu bar is revealed there.
-    func cursorMoved(_ p: CGPoint) {
-        let height = manager.world.config.settings.barHeight
-
-        for m in manager.world.monitors {
-            let was = steppedAside.contains(m.id)
-            let now = barHidden(
-                cursor: p,
-                display: m.frame,
-                barHeight: height,
-                hidden: was
-            )
-
-            guard now != was, let panel = panels[m.id] else {
-                continue
-            }
-            if now { steppedAside.insert(m.id) } else {
-                steppedAside.remove(m.id)
-            }
-
-            panel.fade(visible: !now)
-        }
+    /// Hides the bar of a display while the macOS menu bar is revealed there
+    /// (the event tap sees the cursor reach the top edge and leave the bar).
+    func setAside(_ aside: Bool, on m: MonitorID) {
+        panels[m]?.fade(visible: !aside)
     }
 
     func setNeedsUpdate() {

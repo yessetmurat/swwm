@@ -48,11 +48,8 @@ enum Client {
     static func isRunning() -> Bool {
         let fd = Socket.make()
         defer { close(fd) }
-        var addr = Socket.address()
 
-        return withUnsafePointer(to: &addr) {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
-        } == 0
+        return Socket.connect(fd)
     }
 
     private enum Outcome {
@@ -64,11 +61,7 @@ enum Client {
         let fd = Socket.make()
         defer { close(fd) }
 
-        var addr = Socket.address()
-        let connected = withUnsafePointer(to: &addr) {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
-        }
-        guard connected == 0 else {
+        guard Socket.connect(fd) else {
             return .notRunning
         }
 

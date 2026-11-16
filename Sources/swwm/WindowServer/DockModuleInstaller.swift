@@ -146,37 +146,36 @@ enum DockModuleInstaller {
 
     @discardableResult
     private static func runStatus(_ path: String, _ args: String...) -> Int32 {
+        launch(path, args, capture: nil)
+    }
+
+    private static func run(_ path: String, _ args: String...) {
+        if launch(path, args, capture: nil) != 0 { die("\(path) \(args.joined(separator: " ")) failed", 1) }
+    }
+
+    private static func output(_ path: String, _ args: String...) -> String {
+        let pipe = Pipe()
+        launch(path, args, capture: pipe)
+
+        return String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+    }
+
+    /// Runs a tool to its end and returns its exit status; `capture` takes
+    /// what it prints.
+    @discardableResult
+    private static func launch(_ path: String, _ args: [String], capture: Pipe?) -> Int32 {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: path)
         p.arguments = args
+        if let capture {
+            p.standardOutput = capture
+            p.standardError = capture
+        }
+
         try? p.run()
         p.waitUntilExit()
 
         return p.terminationStatus
-    }
-
-    private static func run(_ path: String, _ args: String...) {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: path)
-        p.arguments = args
-        try? p.run()
-        p.waitUntilExit()
-
-        if p.terminationStatus != 0 { die("\(path) \(args.joined(separator: " ")) failed", 1) }
-    }
-
-    private static func output(_ path: String, _ args: String...) -> String {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: path)
-        p.arguments = args
-        let pipe = Pipe()
-        p.standardOutput = pipe
-        p.standardError = pipe
-
-        try? p.run()
-        p.waitUntilExit()
-
-        return String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
     }
 
     private static func die(_ message: String, _ code: Int32) -> Never {

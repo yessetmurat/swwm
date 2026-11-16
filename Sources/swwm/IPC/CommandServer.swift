@@ -24,11 +24,7 @@ final class CommandServer {
         unlink(Socket.path)  // left by a crash
         fd = Socket.make()
 
-        var addr = Socket.address()
-        let bound = withUnsafePointer(to: &addr) {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
-        }
-        guard bound == 0, listen(fd, 16) == 0 else {
+        guard Socket.bind(fd), listen(fd, 16) == 0 else {
             log.error("cannot listen on \(Socket.path, privacy: .public): \(String(cString: strerror(errno)), privacy: .public)")
             return
         }

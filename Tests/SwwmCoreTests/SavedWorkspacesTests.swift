@@ -62,7 +62,9 @@ private let rect = CGRect(x: 0, y: 0, width: 1000, height: 600)
 
     let fresh = world([B])
     for id in [11, 10] as [WindowID] { fresh.add(id, to: "3", floatingFrame: nil) }
-    fresh.restore(try JSONDecoder().decode(SavedWorkspaces.self, from: data))
+    let saved = try JSONDecoder().decode(SavedWorkspaces.self, from: data)
+    fresh.restoreActive(saved)
+    fresh.workspace(named: "3")!.tree.restore(saved.shape(of: "3")!)
 
     #expect(fresh.activeWorkspace(on: 1) == "3")
     #expect(fresh.workspace(named: "3")!.tree.frames(in: rect, gap: 0) == w.workspace(named: "3")!.tree.frames(in: rect, gap: 0))

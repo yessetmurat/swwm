@@ -82,7 +82,7 @@ extension Manager {
               ws.tree.contains(id),
               let m = world.monitor(of: ws.name),
               world.isVisible(id) else {
-            opened[id] = nil  // floated, moved or gone meanwhile: no size check follows
+            windows[id]?.opened = nil  // floated, moved or gone meanwhile: no size check follows
             return
         }
 
@@ -95,7 +95,7 @@ extension Manager {
         case .float:
             // Only this window: a probe of a window still setting itself up
             // may be off, and its whole kind would float for good.
-            opened[id] = nil
+            windows[id]?.opened = nil
             makeFloating(id, frame: w.frame, because: "it stretches one way only")
         case .askAgain(let wait):
             DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [weak self] in self?.place(id, attempt: attempt + 1) }
@@ -110,7 +110,7 @@ extension Manager {
     private func settle(_ id: WindowID, on m: MonitorID) {
         if world.isVisible(id), let r = world.shownFrame(of: id) { setFrame(id, r) }
 
-        settling.insert(id)
+        windows[id]?.settling = true
         layout(m)
         checkLater(id)
     }
@@ -129,7 +129,7 @@ extension Manager {
             return
         }
 
-        zooming[id] = false
+        windows[id]?.zooming = false
     }
 
     /// A settling window whose app gave it another size (its frame just
@@ -141,18 +141,18 @@ extension Manager {
             return
         }
 
-        if let putBack = zooming[id] {
+        if let putBack = w.zooming {
             let resized = !near(CGRect(origin: .zero, size: w.frame.size), CGRect(origin: .zero, size: r.size))
             if resized {
-                zooming[id] = true
+                windows[id]?.zooming = true
                 setFrame(id, r)
             } else if putBack, near(w.frame, r) {
-                zooming[id] = nil
+                windows[id]?.zooming = nil
             }
             return
         }
 
-        guard settling.contains(id),
+        guard w.settling,
               !CGEventSource.buttonState(.combinedSessionState, button: .left),
               !near(w.frame, r) else {
             return
@@ -174,62 +174,55 @@ extension Manager {
                 return
             }
 
-            guard let ws = self.world.workspace(containing: id),
-                  ws.zoomed != id,
-                  self.zooming[id] == nil,
-                  ws.tree.contains(id) else {
+            let ws = self.world.workspace(containing: id)
+            let tiled = ws?.tree.contains(id) == true && ws?.zoomed != id && self.windows[id]?.zooming == nil
+            let tile = self.world.isVisible(id) ? self.world.shownFrame(of: id) : nil
+
+            switch refusalStep(
+                tiled: tiled,
+                tile: tile?.size,
+                asked: asked,
+                window: now?.size,
+                attempt: attempt,
+                waits: Self.shortTileWaits
+            ) {
+            case .settled:
                 self.settled(id)
-                return
-            }
-
-            guard self.world.isVisible(id), let r = self.world.shownFrame(of: id) else {
-                self.settling.insert(id)
-                self.checkWhenShown.insert(id)
-                return
-            }
-
-            guard asked == nil || asked == r.size else {
+            case .whenShown:
+                self.windows[id]?.settling = true
+                self.windows[id]?.checkWhenShown = true
+            case .waitAgain:
                 self.checkLater(id)
-                return
-            }
+            case .tileAgain(let wait):
+                guard let tile else {
+                    return
+                }
 
-            guard let now else {
-                self.tileAgain(id, r, attempt: attempt)  // a busy app did not answer
-                return
-            }
+                if !CGEventSource.buttonState(.combinedSessionState, button: .left) { self.setFrame(id, tile) }
+                DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [weak self] in
+                    self?.floatIfRefused(id, attempt: attempt + 1, asked: tile.size)
+                }
+            case .float:
+                guard let now, let tile else {
+                    return
+                }
 
-            switch tileFit(window: now.size, tile: r.size) {
-            case .fits:
-                self.settled(id)
-            case .overflows:
                 let start = self.settled(id)
-                self.makeFloating(id, frame: start ?? now, because: "it kept \(now.size), not its tile's \(r.size)")
-            case .short:
-                self.tileAgain(id, r, attempt: attempt)
+                self.makeFloating(id, frame: start ?? now, because: "it kept \(now.size), not its tile's \(tile.size)")
             }
-        }
-    }
-
-    /// Writes the tile again and checks once more, until the waits run out.
-    private func tileAgain(_ id: WindowID, _ r: CGRect, attempt: Int) {
-        guard attempt < Self.shortTileWaits.count else {
-            settled(id)
-            return
-        }
-
-        if !CGEventSource.buttonState(.combinedSessionState, button: .left) { setFrame(id, r) }
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.shortTileWaits[attempt]) { [weak self] in
-            self?.floatIfRefused(id, attempt: attempt + 1, asked: r.size)
         }
     }
 
     /// The size check is over; returns where the app opened the window.
     @discardableResult
     private func settled(_ id: WindowID) -> CGRect? {
-        settling.remove(id)
-        checkWhenShown.remove(id)
+        let start = windows[id]?.opened
 
-        return opened.removeValue(forKey: id)
+        windows[id]?.opened = nil
+        windows[id]?.settling = false
+        windows[id]?.checkWhenShown = false
+
+        return start
     }
 
     /// Floats a tiled window at `frame`: where the app opened it, as a tile

@@ -83,13 +83,6 @@ public struct SavedWorkspaces: Codable, Equatable, Sendable {
 
 extension World {
 
-    /// Puts back the tile layouts and the shown workspaces of a saved run,
-    /// once the windows are added.
-    public func restore(_ saved: SavedWorkspaces) {
-        for (name, shape) in saved.trees ?? [:] { workspace(named: name)?.tree.restore(shape) }
-        restoreActive(saved)
-    }
-
     /// Shows the workspaces the last run showed.
     public func restoreActive(_ saved: SavedWorkspaces) {
         for name in saved.active ?? [] where workspace(named: name) != nil { show(name) }

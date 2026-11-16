@@ -12,31 +12,25 @@ enum Displays {
 
     /// Connected displays in global top-left coordinates (the AX space).
     static func current() -> [MonitorInfo] {
-        let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
-        return NSScreen.screens.compactMap { screen in
+        NSScreen.screens.compactMap { screen in
             guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else {
                 return nil
             }
 
-            let f = screen.frame
             return MonitorInfo(
                 id: id,
                 name: screen.localizedName,
                 isBuiltin: CGDisplayIsBuiltin(id) != 0,
-                frame: CGRect(
-                    x: f.minX,
-                    y: primaryHeight - f.maxY,
-                    width: f.width,
-                    height: f.height
-                )
+                frame: flipped(screen.frame)
             )
         }
     }
 
-    /// Converts a top-left global rect to AppKit's bottom-left space.
-    static func appKitRect(_ r: CGRect) -> NSRect {
+    /// A rect of one space in the other: top-left global (the AX space) and
+    /// AppKit's bottom-left one mirror each other about the primary display.
+    static func flipped(_ r: CGRect) -> CGRect {
         let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
-        return NSRect(
+        return CGRect(
             x: r.minX,
             y: primaryHeight - r.maxY,
             width: r.width,

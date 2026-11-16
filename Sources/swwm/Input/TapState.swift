@@ -18,6 +18,7 @@ struct TapState: Sendable {
     var bindings: [KeyCombo: Command] = [:]
     var settings = Settings()
     var view = TapView()
+    var displays: [MonitorID: CGRect] = [:]  // each display's frame, for the bar stepping aside
 
     /// The managed window a click or hover at `p` reaches, as the window
     /// server hit-tests it. Any thread.
