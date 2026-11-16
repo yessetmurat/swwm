@@ -25,6 +25,7 @@ final class AppConnection {
     private var reported = false                   // queue: its windows went to the manager once
     private var observer: AXObserver?              // AX thread
     private var registering = false                // AX thread
+    private var quit = false                       // AX thread: the app quit
     private var watcher: AXObserver?               // queue: the same observer, for window notifications
     private var elements: [WindowID: AXUIElement] = [:]  // queue
     private var watched: Set<WindowID> = []        // queue
@@ -64,7 +65,7 @@ final class AppConnection {
     /// An app that gave no answer is asked again at its next window event. AX
     /// thread.
     func connect() {
-        guard observer == nil, !registering, !app.isTerminated else {
+        guard observer == nil, !registering, !quit else {
             return
         }
 
@@ -77,7 +78,7 @@ final class AppConnection {
             ax.perform { [self] in
                 registering = false
 
-                guard let observer, !app.isTerminated else {
+                guard let observer, !quit else {
                     log.debug("connect \(self.app.localizedName ?? "?", privacy: .public): no answer")
                     return
                 }
@@ -92,6 +93,7 @@ final class AppConnection {
     func disconnect() {
         if let observer { ax.remove(AXObserverGetRunLoopSource(observer)) }
         observer = nil
+        quit = true
     }
 
     /// Reports the app's windows again (the app was unhidden, the screen

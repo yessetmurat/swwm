@@ -87,15 +87,18 @@ final class Connections {
             if app.isManageable { self?.connect(app) }
         }
         // Not `didTerminateApplicationNotification`: macOS does not post it for
-        // every app (Home). The list changes only on the main run loop; a quit
-        // app's pid reads -1, so the connections' own apps tell which quit.
-        runningWatch = NSWorkspace.shared.observe(\.runningApplications) { [weak self] _, change in
-            guard let self, change.kind == .removal else {
+        // every app (Home). The list changes only on the main run loop; the
+        // change carries the apps that left, their pids reading -1, so they are
+        // matched to the connections' own apps by equality. Not by
+        // `isTerminated`: it stays false while child processes the app left
+        // behind still run.
+        runningWatch = NSWorkspace.shared.observe(\.runningApplications, options: [.old]) { [weak self] _, change in
+            guard let self, change.kind == .removal, let left = change.oldValue else {
                 if change.kind != .insertion { log.debug("running apps changed, kind \(change.kind.rawValue, privacy: .public)") }
                 return
             }
 
-            let gone = map.withLock { $0.filter { $0.value.app.isTerminated }.keys }
+            let gone = map.withLock { $0.filter { left.contains($0.value.app) }.keys }
             log.debug("running apps: one left, terminated \(gone.map(String.init).joined(separator: " "), privacy: .public)")
             for pid in gone { terminated(pid) }
         }
