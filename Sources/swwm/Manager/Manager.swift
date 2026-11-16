@@ -118,6 +118,7 @@ final class Manager: AppEvents {
             takeOver(old, by: s)
             return true
         case .manage(let target, let floating):
+            log.debug("manage \(s.id, privacy: .public) \(s.app, privacy: .public) ws=\(target, privacy: .public) floating=\(floating, privacy: .public) adopting=\(adopting, privacy: .public)")
             levels.adopt(s.id, pid: s.pid)
             windows[s.id] = ManagedWindow(s)
             WindowServer.watch(Array(windows.keys))
@@ -368,6 +369,7 @@ final class Manager: AppEvents {
 
     func displaysChanged() {
         world.updateMonitors(Displays.current())
+        log.debug("displays \(self.world.monitors.map { "\($0.id) \($0.name)" }.joined(separator: ", "), privacy: .public)")
 
         // Positions refer to the old arrangement: layout places every hidden
         // window again.

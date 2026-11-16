@@ -64,6 +64,7 @@ final class Connections {
                     return
                 }
 
+                log.debug("screen locked=\(locked, privacy: .public)")
                 screen.isLocked = locked
                 if !locked { map.withLock { Array($0.values) }.forEach { $0.rescan() } }
             })
