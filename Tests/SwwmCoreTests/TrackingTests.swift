@@ -22,7 +22,7 @@ private func snap(
     resizable: Bool = true,
     fullScreen: Bool = false,
     minimized: Bool = false,
-    listed: Set<WindowID> = [1]
+    listed: Set<WindowID>? = [1]
 ) -> AppWindow {
     AppWindow(
         id: id,
@@ -133,6 +133,11 @@ private func saved(
 
 @Test func listedWindowIsNoCoveredTab() {
     #expect(decide(snap(listed: [1, 7]), ctx(frames: [7: tile])) == .manage(workspace: "1", floating: false))
+}
+
+@Test func unreadListIsNoCoveredTab() {
+    // The app did not tell its windows: nothing says window 7 is a covered tab.
+    #expect(decide(snap(listed: nil), ctx(frames: [7: tile])) == .manage(workspace: "1", floating: false))
 }
 
 @Test func rememberedWorkspaceComesBack() {

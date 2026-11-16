@@ -82,13 +82,16 @@ final class EventTap {
             if let port { CGEvent.tapEnable(tap: port, enable: true) }
             return event
         case .keyDown:
-            noteInput(click: false)
-
             let combo = KeyCombo(keyCode: UInt16(event.getIntegerValueField(.keyboardEventKeycode)),
                                  modifiers: modifiers(event.flags))
             guard let command = s.bindings[combo] else {
+                noteInput()
                 return event
             }
+
+            // A key swwm takes reaches no app: focus that follows is the user's
+            // doing only when the command acts outside swwm (it may open an app).
+            if case .exec = command { noteInput() }
 
             DispatchQueue.main.async { [manager] in manager.run(command) }
             return nil
@@ -98,12 +101,15 @@ final class EventTap {
             hover(p, s)
             return event
         case .leftMouseDown, .rightMouseDown:
-            noteInput(click: true)
             let p = event.location
+            let hit = s.window(at: p)
+            // A right click does not focus the window it hits.
+            noteInput(clickOn: type == .leftMouseDown ? hit : nil)
+
             guard modifiers(event.flags) == s.settings.mouseModifier else {
                 // A plain press may start a title-bar move or an edge resize.
                 let clicks = Int(event.getIntegerValueField(.mouseEventClickState))
-                press = type == .leftMouseDown ? s.window(at: p).flatMap { id in s.view.frames[id].map { (id, $0, p, clicks) } } : nil
+                press = type == .leftMouseDown ? hit.flatMap { id in s.view.frames[id].map { (id, $0, p, clicks) } } : nil
 
                 // Marked before the app sees the press: macOS may zoom the window on it.
                 if let pr = press, pr.clicks == 2, inTitleBar(p, of: pr.frame) {
@@ -113,7 +119,7 @@ final class EventTap {
                 return event
             }
 
-            guard let id = s.window(at: p), let frame = s.view.frames[id] else {
+            guard let id = hit, let frame = s.view.frames[id] else {
                 return event
             }
 
@@ -181,10 +187,16 @@ final class EventTap {
         }
     }
 
-    /// A click or key press: focus that follows it is the user's doing.
-    private func noteInput(click: Bool) {
+    /// A key press: focus that follows it is the user's doing.
+    private func noteInput() {
         let now = Date()
-        DispatchQueue.main.async { [manager] in manager.noteInput(at: now, click: click) }
+        DispatchQueue.main.async { [manager] in manager.noteInput(at: now, click: false) }
+    }
+
+    /// A click, on managed window `id` when it hit one.
+    private func noteInput(clickOn id: WindowID?) {
+        let now = Date()
+        DispatchQueue.main.async { [manager] in manager.noteInput(at: now, click: true, on: id) }
     }
 
     /// The window was moved by its title bar or resized by an edge without

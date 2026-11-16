@@ -23,7 +23,7 @@ public struct AppWindow: Equatable, Sendable {
     public let isMinimized: Bool
     public let isResizable: Bool          // the size attribute is settable
     public let hasFullScreenButton: Bool  // tells an app's main windows from its panels
-    public let listed: Set<WindowID>      // the app's listed windows when this was read
+    public let listed: Set<WindowID>?     // the app's listed windows when this was read; nil: it did not tell
 
     public init(
         id: WindowID,
@@ -38,7 +38,7 @@ public struct AppWindow: Equatable, Sendable {
         isMinimized: Bool,
         isResizable: Bool,
         hasFullScreenButton: Bool,
-        listed: Set<WindowID>
+        listed: Set<WindowID>?
     ) {
         self.id = id
         self.pid = pid

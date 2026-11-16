@@ -80,8 +80,9 @@ public final class World {
         }
         if let i = config.monitors.firstIndex(where: { $0.match == "*" }) { take(i) { _ in true } }
 
-        // Displays nobody claimed get one workspace of their own.
-        for m in free where !autoOwner.values.contains(m.name) {
+        // Displays nobody claimed get one workspace of their own: one per
+        // display, also where several carry one name.
+        for m in free where autoOwner.values.filter({ $0 == m.name }).count < free.filter({ $0.name == m.name }).count {
             var name = m.name
             var n = 2
             while spaces[name] != nil {
@@ -94,12 +95,29 @@ public final class World {
         }
 
         let fallback = homeMonitor
+        let previous = home
         home = [:]
         for (i, rule) in config.monitors.enumerated() {
             for name in rule.workspaces { home[name] = owner[i] ?? fallback }
         }
-        for (name, displayName) in autoOwner {
-            home[name] = free.first { $0.name == displayName }?.id ?? fallback
+
+        // Where several displays carry one name, a workspace stays on the
+        // display it is on while that one is there; the rest take that
+        // name's other displays in order.
+        var taken: Set<MonitorID> = []
+        for name in autoOrder {
+            guard let old = previous[name],
+                  free.contains(where: { $0.id == old && $0.name == autoOwner[name] }),
+                  taken.insert(old).inserted else {
+                continue
+            }
+
+            home[name] = old
+        }
+        for name in autoOrder where home[name] == nil {
+            let next = free.first { $0.name == autoOwner[name] && !taken.contains($0.id) }?.id
+            if let next { taken.insert(next) }
+            home[name] = next ?? fallback
         }
 
         for m in ms {

@@ -165,3 +165,15 @@ private func withChild() -> FloatingLevels {
     #expect(l.removeAll() == [down(1), down(2)])
     #expect(!l.isRaised(1) && !l.isRaised(2))
 }
+
+@Test func staleFailureKeepsNewerRaise() {
+    var l = FloatingLevels()
+    let first = l.set(1, pid: 10, floating: true)  // Dock is not there yet
+    _ = l.set(1, pid: 10, floating: false)
+    _ = l.set(1, pid: 10, floating: true)          // this one will reach it
+
+    l.failed(first[0])
+
+    #expect(l.isRaised(1))
+    #expect(l.set(1, pid: 10, floating: false) == [down(1)])
+}

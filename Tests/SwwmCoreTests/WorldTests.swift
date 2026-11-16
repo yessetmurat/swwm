@@ -255,3 +255,43 @@ func world(_ ms: [MonitorInfo], _ config: Config = .default) -> World {
     #expect(ws.floating[22] == CGRect(x: 1, y: 2, width: 3, height: 4) && ws.floating[12] == nil)
     #expect(ws.mru == [22, 11, 20])
 }
+
+private let sameName = [
+    MonitorInfo(id: 3, name: E.name, isBuiltin: false, frame: CGRect(x: 4072, y: 0, width: 2560, height: 1440)),
+    MonitorInfo(id: 4, name: E.name, isBuiltin: false, frame: CGRect(x: 6632, y: 0, width: 2560, height: 1440)),
+]
+
+@Test func sameNameDisplaysEachGetAWorkspace() {
+    let w = world([B, E] + sameName)  // "*" takes E; two more of its model are left
+
+    #expect(w.workspaces(on: 3) == ["Some Display"])
+    #expect(w.workspaces(on: 4) == ["Some Display 2"])
+    #expect(w.activeWorkspace(on: 4) == "Some Display 2")
+}
+
+@Test func sameNameDisplayLeavingKeepsTheOther() {
+    let w = world([B, E] + sameName)
+
+    w.updateMonitors([B, E, sameName[0]])
+
+    #expect(w.workspaces(on: 3) == ["Some Display"])
+    #expect(w.monitor(of: "Some Display 2") == B.id)
+
+    w.updateMonitors([B, E] + sameName)
+
+    #expect(w.workspaces(on: 4) == ["Some Display 2"])
+}
+
+@Test func sameNameDisplayStayingKeepsItsWorkspace() {
+    let w = world([B, E] + sameName)
+
+    w.updateMonitors([B, E, sameName[1]])  // the first of the two leaves
+
+    #expect(w.workspaces(on: 4) == ["Some Display 2"])
+    #expect(w.monitor(of: "Some Display") == B.id)
+
+    w.updateMonitors([B, E] + sameName)
+
+    #expect(w.workspaces(on: 3) == ["Some Display"])
+    #expect(w.workspaces(on: 4) == ["Some Display 2"])
+}

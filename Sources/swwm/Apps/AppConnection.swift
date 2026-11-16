@@ -105,7 +105,7 @@ final class AppConnection {
             return
         }
 
-        let list = listedElements()
+        let list = listedElements() ?? []
         let found = reports(of: list)
         // Finder lists its desktop as a scroll area with no window number, so
         // it has no report.
@@ -131,7 +131,7 @@ final class AppConnection {
         queue.async { [self] in
             let el = AXUIElementCreateApplication(pid)
             let win: AXUIElement? = Self.patiently(el) { el.attribute(kAXFocusedWindowAttribute) }
-            let w = win.flatMap { report($0, listed: nil) }
+            let w = win.flatMap { report($0) }
 
             DispatchQueue.main.async { [self] in events?.focusChanged(w, pid: pid) }
         }
@@ -252,13 +252,13 @@ final class AppConnection {
         queue.async { [self] in
             switch notification {
             case kAXWindowCreatedNotification, kAXWindowDeminiaturizedNotification:
-                guard let w = report(element, listed: nil) else {
+                guard let w = report(element) else {
                     return
                 }
 
                 DispatchQueue.main.async { [self] in events?.windowAppeared(w) }
             case kAXFocusedWindowChangedNotification, kAXMainWindowChangedNotification:
-                let w = report(element, listed: nil)
+                let w = report(element)
                 DispatchQueue.main.async { [self] in events?.focusChanged(w, pid: pid) }
             case kAXUIElementDestroyedNotification:
                 guard let id else {
@@ -289,34 +289,30 @@ final class AppConnection {
     // MARK: - Queue
 
     /// The app's listed windows, as reports. Queue.
-    private func listed() -> [AppWindow] { reports(of: listedElements()) }
+    private func listed() -> [AppWindow] { reports(of: listedElements() ?? []) }
 
-    /// The app's window list as it gives it. Queue.
-    private func listedElements() -> [AXUIElement] {
+    /// The app's window list as it gives it; nil when it does not tell. Queue.
+    private func listedElements() -> [AXUIElement]? {
         let el = AXUIElementCreateApplication(pid)
-        return Self.patiently(el) { el.attribute(kAXWindowsAttribute) ?? [] }
+        return Self.patiently(el) { el.attribute(kAXWindowsAttribute) }
     }
 
     /// Reports for the elements that have a window number. Queue.
     private func reports(of list: [AXUIElement]) -> [AppWindow] {
         let ids = Set(list.compactMap(Self.windowID))
-        return list.compactMap { report($0, listed: ids) }
+        return list.compactMap { report($0, among: ids) }
     }
 
-    /// One window as a report, watched from now on. `listed` nil: read the
-    /// app's list too. Queue.
-    private func report(_ e: AXUIElement, listed: Set<WindowID>?) -> AppWindow? {
-        guard let id = Self.patiently(e, { Self.windowID(e) }) else {
+    /// One window as a report, watched from now on; nil for one whose close
+    /// swwm would not see. `listed` nil: read the app's list too. Queue.
+    private func report(_ e: AXUIElement, among listed: Set<WindowID>? = nil) -> AppWindow? {
+        guard let id = Self.windowID(e) else {
             var n: CGWindowID = 0
             log.debug("\(self.app.localizedName ?? "?", privacy: .public): no window number (\(_AXUIElementGetWindow(e, &n).rawValue, privacy: .public))")
             return nil
         }
 
-        let ids = listed ?? {
-            let el = AXUIElementCreateApplication(pid)
-            let list: [AXUIElement] = Self.patiently(el) { el.attribute(kAXWindowsAttribute) ?? [] }
-            return Set(list.compactMap(Self.windowID))
-        }()
+        let ids = listed ?? listedElements().map { Set($0.compactMap(Self.windowID)) }
 
         let window = Self.patiently(e) { () -> AppWindow in
             let w = AXWindow(
@@ -343,22 +339,39 @@ final class AppConnection {
             )
         }
 
+        guard watch(e, id) else {
+            return nil
+        }
+
         elements[id] = e
-        watch(e, id)
         return window
     }
 
     /// Window-level notifications carry the window ID as refcon: a destroyed
-    /// element can no longer tell its ID. Queue.
-    private func watch(_ e: AXUIElement, _ id: WindowID) {
-        guard let watcher, watched.insert(id).inserted else {
-            return
+    /// element can no longer tell its ID. False when the app did not take the
+    /// subscription to the window's end (the window closed while it was
+    /// read, or no answer): nothing would ever say that it closed. Queue.
+    private func watch(_ e: AXUIElement, _ id: WindowID) -> Bool {
+        guard let watcher else {
+            return false
+        }
+        guard !watched.contains(id) else {
+            return true
         }
 
         let refcon = UnsafeMutableRawPointer(bitPattern: UInt(id))
-        Self.patiently(e) {
-            for n in [kAXUIElementDestroyedNotification, kAXWindowMiniaturizedNotification,
-                      kAXWindowDeminiaturizedNotification, kAXTitleChangedNotification] {
+        let destroyed = Self.patiently(e) { () -> AXError in
+            let destroyed = AXObserverAddNotification(
+                watcher,
+                e,
+                kAXUIElementDestroyedNotification as CFString,
+                refcon
+            )
+            guard Self.subscribed(destroyed) else {
+                return destroyed
+            }
+
+            for n in [kAXWindowMiniaturizedNotification, kAXWindowDeminiaturizedNotification, kAXTitleChangedNotification] {
                 AXObserverAddNotification(
                     watcher,
                     e,
@@ -366,12 +379,34 @@ final class AppConnection {
                     refcon
                 )
             }
+            return destroyed
+        }
+
+        guard Self.subscribed(destroyed) else {
+            log.debug("\(self.app.localizedName ?? "?", privacy: .public): window \(id, privacy: .public) not watched (\(destroyed.rawValue, privacy: .public))")
+            return false
+        }
+
+        watched.insert(id)
+        return true
+    }
+
+    /// An element that is gone, or whose app gave no answer, is not watched;
+    /// any other answer leaves the window as watched as it can be.
+    private static func subscribed(_ result: AXError) -> Bool {
+        switch result {
+        case .invalidUIElement, .cannotComplete: false
+        default: true
         }
     }
 
+    /// Asked patiently: at the global timeout a busy app's windows would
+    /// drop out of its list.
     private static func windowID(_ e: AXUIElement) -> WindowID? {
-        var id: CGWindowID = 0
-        return _AXUIElementGetWindow(e, &id) == .success && id != 0 ? id : nil
+        patiently(e) {
+            var id: CGWindowID = 0
+            return _AXUIElementGetWindow(e, &id) == .success && id != 0 ? id : nil
+        }
     }
 
     /// An observer for the app's window events, once the app answers.

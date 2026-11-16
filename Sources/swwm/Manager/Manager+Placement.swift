@@ -24,30 +24,31 @@ extension Manager {
     // says when that ends; these waits are the asking again.
     static let shortTileWaits = [0.2, 0.3, 0.5, 1.0]
 
-    func windowCreated(_ new: AppWindow) {
+    /// True when the window is managed from now on.
+    @discardableResult
+    func windowCreated(_ new: AppWindow) -> Bool {
         let id = new.id
 
         // New windows open on the display under the cursor.
         let returning = remembered.contains(id)  // unminimized or unhidden: keeps its place
 
-        guard track(new, adopting: false),
-              let w = windows[id],
-              let ws = world.workspace(containing: id),
-              let m = world.monitor(of: ws.name) else {
-            return
+        guard track(new, adopting: false) else {
+            return false
         }
 
-        if !returning, ws.tree.contains(id), world.isVisible(id) {
-            switch tilesByKind[w.kind] {
-            case true?: settle(id, on: m)
-            case false?:
-                opened[id] = nil
-                makeFloating(id, frame: w.frame, because: "its kind floats")
-            case nil: place(id, attempt: 0)
-            }
+        guard let w = windows[id],
+              let ws = world.workspace(containing: id),
+              let m = world.monitor(of: ws.name) else {
+            return true
+        }
+
+        if !returning, ws.tree.contains(id), world.isVisible(id), !tilingKinds.contains(w.kind) {
+            place(id, attempt: 0)
         } else {
             settle(id, on: m)
         }
+
+        return true
     }
 
     /// Tiles a new window or floats it, without first showing it in a tile it
@@ -92,13 +93,14 @@ extension Manager {
             waits: Self.sizeProbeWaits
         ) {
         case .float:
-            tilesByKind[w.kind] = false
+            // Only this window: a probe of a window still setting itself up
+            // may be off, and its whole kind would float for good.
             opened[id] = nil
             makeFloating(id, frame: w.frame, because: "it stretches one way only")
         case .askAgain(let wait):
             DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [weak self] in self?.place(id, attempt: attempt + 1) }
         case .tile(let learned):
-            if let learned { tilesByKind[w.kind] = learned }
+            if learned == true { tilingKinds.insert(w.kind) }
             settle(id, on: m)
         }
     }
@@ -110,7 +112,14 @@ extension Manager {
 
         settling.insert(id)
         layout(m)
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.refusalCheck) { [weak self] in self?.floatIfRefused(id) }
+        checkLater(id)
+    }
+
+    /// Asks after `refusalCheck` whether the window took its tile, as that
+    /// tile is now.
+    func checkLater(_ id: WindowID) {
+        let asked = world.shownFrame(of: id)?.size
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.refusalCheck) { [weak self] in self?.floatIfRefused(id, asked: asked) }
     }
 
     /// A tile the user double-clicked by its title bar: macOS zooms it, and
@@ -155,19 +164,32 @@ extension Manager {
     /// its neighbors: it floats instead. One smaller covers nothing: it stays
     /// and is asked again, not while the user drags, and keeps the size it
     /// ends up with. Only this window: the next one of its kind may fit its tile.
-    func floatIfRefused(_ id: WindowID, attempt: Int = 0) {
+    /// `asked`: the tile's size when this check was asked for. A tile that
+    /// changed since (a neighbor came or went) restarts the wait: the window
+    /// has not had its time to take the new size. A window whose workspace
+    /// is not shown is checked once it is (`layout`).
+    func floatIfRefused(_ id: WindowID, attempt: Int = 0, asked: CGSize? = nil) {
         readFrame(id) { [weak self] now in
             guard let self else {
                 return
             }
 
-            guard self.world.isVisible(id),
-                  let ws = self.world.workspace(containing: id),
+            guard let ws = self.world.workspace(containing: id),
                   ws.zoomed != id,
                   self.zooming[id] == nil,
-                  ws.tree.contains(id),
-                  let r = self.world.shownFrame(of: id) else {
+                  ws.tree.contains(id) else {
                 self.settled(id)
+                return
+            }
+
+            guard self.world.isVisible(id), let r = self.world.shownFrame(of: id) else {
+                self.settling.insert(id)
+                self.checkWhenShown.insert(id)
+                return
+            }
+
+            guard asked == nil || asked == r.size else {
+                self.checkLater(id)
                 return
             }
 
@@ -197,7 +219,7 @@ extension Manager {
 
         if !CGEventSource.buttonState(.combinedSessionState, button: .left) { setFrame(id, r) }
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.shortTileWaits[attempt]) { [weak self] in
-            self?.floatIfRefused(id, attempt: attempt + 1)
+            self?.floatIfRefused(id, attempt: attempt + 1, asked: r.size)
         }
     }
 
@@ -205,6 +227,7 @@ extension Manager {
     @discardableResult
     private func settled(_ id: WindowID) -> CGRect? {
         settling.remove(id)
+        checkWhenShown.remove(id)
 
         return opened.removeValue(forKey: id)
     }

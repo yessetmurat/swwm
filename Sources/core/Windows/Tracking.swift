@@ -40,10 +40,10 @@ public struct TrackContext: Sendable {
 /// Whether swwm manages a window and where: its remembered workspace (one a
 /// reload dropped does not count), the last run's, its rule's, else the
 /// active one of the display at the point. A new or newly shown native tab
-/// takes the tile of the tab it covers, which drops out of the app's list. No
-/// tab bar check: when a tab closes, the next one is reported before the
-/// close, already alone. Takes the window from `remembered` only when it is
-/// managed.
+/// takes the tile of the tab it covers, which drops out of the app's list
+/// (never judged from a list the app did not tell). No tab bar check: when a
+/// tab closes, the next one is reported before the close, already alone.
+/// Takes the window from `remembered` only when it is managed.
 public func trackDecision(
     _ s: AppWindow,
     world: World,
@@ -62,7 +62,9 @@ public func trackDecision(
         return .skip
     }
 
-    if let old = tabSibling(of: s.frame, among: c.appFrames.filter { !s.listed.contains($0.key) }) { return .takeOver(old) }
+    if let listed = s.listed, let old = tabSibling(of: s.frame, among: c.appFrames.filter { !listed.contains($0.key) }) {
+        return .takeOver(old)
+    }
 
     let rule = world.config.rules.first { $0.matches(app: s.app, title: s.title) }
     let back = remembered.take(s.id)

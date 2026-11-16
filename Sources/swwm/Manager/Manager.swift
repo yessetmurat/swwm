@@ -21,6 +21,7 @@ final class Manager: AppEvents {
     weak var connections: Connections?
     private var hidden: [WindowID: MonitorID] = [:]      // window -> display it is hidden on
     private var needsPlacement: Set<WindowID> = []         // the next layout moves these even where they look placed
+    private var writeCount: [WindowID: Int] = [:]          // writes sent to each window: a frame read before the last is old
     private var startPids: Set<pid_t> = []                 // apps running when swwm started
     private var joinedPids: Set<pid_t> = []                // of those, the ones that reported their windows
     private var touched: Set<String> = []                  // workspaces whose tiles changed since start
@@ -36,14 +37,16 @@ final class Manager: AppEvents {
     var remembered = Remembered()                  // minimized windows and those of hidden apps
     private var saved: SavedWorkspaces?                    // from the last run, read at start
     var opened: [WindowID: CGRect] = [:]                   // where the app opened it, until the size check
-    var tilesByKind: [String: Bool] = [:]                  // learned from the first window of each kind
+    var tilingKinds: Set<String> = []                      // kinds a window of which took a tile's size
     var settling: Set<WindowID> = []                       // new, until the size check: their own resizes are undone
+    var checkWhenShown: Set<WindowID> = []                 // of those, the ones whose check found their workspace hidden
     var zooming: [WindowID: Bool] = [:]                    // title-bar double-clicked tiles; true once swwm put one back
     private var savePending = false
     private var lastSaved: Data?                           // what the file holds
     /// Per login session: the temporary directory is cleared on reboot.
     private static let savedFile = URL(fileURLWithPath: NSTemporaryDirectory()).appending(path: "swwm-workspaces.json")
     private var history = FocusHistory()
+    private var echoes = FocusEchoes()                     // answers to focus commands swwm has since replaced
     var focused: WindowID? { history.current }
     private(set) var lastCursorMove = Date.distantPast { didSet { publishSoon() } }  // a warp or swwm's own click
     var onPublish: ((TapView) -> Void)?                   // hands the event tap what it decides from
@@ -137,6 +140,7 @@ final class Manager: AppEvents {
         opened[old] = nil
         if let m = hidden.removeValue(forKey: old) { hidden[w.id] = m }
         if let z = zooming.removeValue(forKey: old) { zooming[w.id] = z }
+        writeCount[old] = nil
         windows[w.id] = ManagedWindow(w)
         WindowServer.watch(Array(windows.keys))
         if focused == old { history.focused(w.id, at: Date()) }
@@ -157,7 +161,9 @@ final class Manager: AppEvents {
         }
 
         let candidates = listed.filter { windows[$0.id] == nil && $0.isStandard && !$0.isMinimized }
-        let next = tabSibling(of: r, among: Dictionary(uniqueKeysWithValues: candidates.map { ($0.id, $0.frame) }))
+        // An app's list is not swwm's to trust: one ID twice must not be fatal.
+        let frames = Dictionary(candidates.map { ($0.id, $0.frame) }, uniquingKeysWith: { first, _ in first })
+        let next = tabSibling(of: r, among: frames)
         return candidates.first { $0.id == next }
     }
 
@@ -261,8 +267,10 @@ final class Manager: AppEvents {
         hidden[id] = nil
         leaving.remove(id)
         needsPlacement.remove(id)
+        writeCount[id] = nil
         opened[id] = nil
         settling.remove(id)
+        checkWhenShown.remove(id)
         zooming[id] = nil
 
         guard let m else {
@@ -304,10 +312,7 @@ final class Manager: AppEvents {
                     continue
                 }
 
-                // Its frame is no floating frame when it is hidden already or
-                // placed for an old display arrangement.
-                let stale = needsPlacement.remove(id) != nil
-                if hidden[id] == nil, !stale, other.floating[id] != nil { other.floating[id] = w.frame }
+                needsPlacement.remove(id)
                 setPosition(id, hiddenOrigin(for: w.frame.size, on: info, others: others))
                 leaving.insert(id)  // until its moved event, or the app turns the write down
                 hidden[id] = m
@@ -318,6 +323,9 @@ final class Manager: AppEvents {
         leaving.subtract(ws.windows)  // shown again before their moved event came
 
         for (id, r) in ws.tree.frames(in: area, gap: settings.gap) where id != ws.zoomed {
+            // Its size check found its workspace hidden: due now.
+            if checkWhenShown.remove(id) != nil { checkLater(id) }
+
             setFrame(id, r)
             hidden[id] = nil
             needsPlacement.remove(id)
@@ -362,7 +370,7 @@ final class Manager: AppEvents {
         world.updateMonitors(Displays.current())
 
         // Positions refer to the old arrangement: layout places every hidden
-        // window again, without saving its off-screen frame as a floating frame.
+        // window again.
         needsPlacement.formUnion(hidden.keys)
         layoutAll()
 
@@ -391,6 +399,7 @@ final class Manager: AppEvents {
         park.clear()
         if let c = connections { c.connection(w.pid)?.focus(id, ticket: c.focusTicket.next()) }
 
+        echoes.commanded(id, from: focused)
         history.focused(id, at: Date())
         world.noteFocused(id)
 
@@ -423,8 +432,10 @@ final class Manager: AppEvents {
         if let id = world.focusCandidate(on: m) {
             focus(id)
         } else if let info = world.monitorInfo(m) {
+            let from = focused
             history.focused(nil, at: Date())
-            focusMovedOn()
+            cancelPendingFocus()
+            echoes.commanded(nil, from: from)
 
             // The user's key or click that led here is used up: focus moves
             // that follow swwm's own desktop click are not the user's.
@@ -469,6 +480,7 @@ final class Manager: AppEvents {
             ) {
             case .click:
                 pendingPark = nil
+                echoes.movedOn()         // the park is done: what is reported from now on is news
                 lastCursorMove = Date()  // the click puts the cursor there
                 park.park(on: pending.info, desktopPoint: finderHasDesktop ? p : nil)
                 return
@@ -480,6 +492,7 @@ final class Manager: AppEvents {
         }
 
         pendingPark = nil
+        echoes.movedOn()                // the park is done: what is reported from now on is news
         focusInUnmanagedWindow = false  // swwm holds focus itself
         park.park(on: pending.info, desktopPoint: nil)
     }
@@ -527,7 +540,11 @@ final class Manager: AppEvents {
         // Mouse follows focus whoever moved it (a new window, cmd-tab, a Dock
         // click); after a hover or a click the cursor is on the window already.
         // The tile, not the window's frame: a new window may not be there yet.
-        if settings.mouseFollowsFocus, world.isVisible(id), let r = world.shownFrame(of: id),
+        // Not around a close: the pending refocus moves the cursor itself.
+        if settings.mouseFollowsFocus,
+           pendingFocus.isEmpty,
+           world.isVisible(id),
+           let r = world.shownFrame(of: id),
            !r.contains(Displays.cursor) {
             lastCursorMove = now
             CGWarpMouseCursorPosition(CGPoint(x: r.midX, y: r.midY))
@@ -581,7 +598,12 @@ final class Manager: AppEvents {
             return
         }
 
-        focusInUnmanagedWindow = windows[w.id] == nil
+        // An answer to a focus command swwm has since replaced says nothing
+        // new: it must not take focus back, nor cancel the newer command.
+        let managed = windows[w.id] != nil
+        if managed, echoes.reported(w.id) == .echo { return }
+
+        focusInUnmanagedWindow = !managed
         if focusInUnmanagedWindow { focusMovedOn() }
 
         // Focus moved to a window swwm does not manage on another display:
@@ -802,7 +824,8 @@ final class Manager: AppEvents {
         }
 
         guard adopting else {
-            return found.forEach(windowCreated)
+            if found.map(windowCreated).contains(true) { readFocusIfFrontmost(pid) }
+            return
         }
 
         joinedPids.insert(pid)
@@ -819,15 +842,31 @@ final class Manager: AppEvents {
 
         shown.forEach(layout)
 
-        let adopted = found.map(\.id).filter { windows[$0] != nil }
+        let adopted = found.map(\.id).filter { windows[$0] != nil }.map { (id: $0, asked: world.shownFrame(of: $0)?.size) }
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.startRefusalCheck) { [weak self] in
-            for id in adopted { self?.floatIfRefused(id) }
+            for a in adopted { self?.floatIfRefused(a.id, asked: a.asked) }
         }
 
+        readFocusIfFrontmost(pid)
+    }
+
+    func windowAppeared(_ w: AppWindow) {
+        if windowCreated(w) { readFocusIfFrontmost(w.pid) }
+    }
+
+    /// A window's focus report may come before the window is manageable (still
+    /// minimized, its app still hidden, no subrole yet): once it is managed,
+    /// its app is asked again, or focus would stay unknown until the next change.
+    private func readFocusIfFrontmost(_ pid: pid_t) {
         if NSWorkspace.shared.frontmostApplication?.processIdentifier == pid { connections?.connection(pid)?.readFocus() }
     }
 
-    func windowAppeared(_ w: AppWindow) { windowCreated(w) }
+    /// An app swwm does not manage is frontmost now (a system prompt such as
+    /// SecurityAgent's): the user is in its window.
+    func unmanagedAppActivated() {
+        focusMovedOn()
+        focusInUnmanagedWindow = true
+    }
 
     func focusChanged(_ w: AppWindow?, pid: pid_t) {
         if let w { return windowFocusChanged(w) }
@@ -880,8 +919,14 @@ final class Manager: AppEvents {
     }
 
     /// Focus moved somewhere swwm did not send it: a focus command still
-    /// waiting for its app is stale.
-    private func focusMovedOn() { _ = connections?.focusTicket.next() }
+    /// waiting for its app is stale, and every focus report counts again.
+    private func focusMovedOn() {
+        cancelPendingFocus()
+        echoes.movedOn()
+    }
+
+    /// A focus command still waiting for its app is stale.
+    private func cancelPendingFocus() { _ = connections?.focusTicket.next() }
 
     /// The window's frame as its app has it now, for decisions made after
     /// something moved it; `reply` runs on main.
@@ -890,13 +935,34 @@ final class Manager: AppEvents {
             return reply(nil)
         }
 
+        let sent = writeCount[id]
         c.readFrame(id) { [weak self] f in
-            if let f {
-                self?.windows[id]?.frame = f
-                self?.publishSoon()
+            if let self, let f {
+                self.windows[id]?.frame = f
+                // Read after every write swwm sent: where its app or the user has it.
+                if sent == self.writeCount[id] { self.learnFloatingFrame(id, f) }
+                self.publishSoon()
             }
             reply(f)
         }
+    }
+
+    /// A floating window keeps the frame its app reports while it is shown on
+    /// its own display. Not one hidden or on a workspace not shown (that is
+    /// the hiding spot), and not one on another display (macOS moved it off
+    /// a display that went away; its place there is kept for the return).
+    private func learnFloatingFrame(_ id: WindowID, _ f: CGRect) {
+        guard hidden[id] == nil,
+              world.isVisible(id),
+              let ws = world.workspace(containing: id),
+              ws.floating[id] != nil,
+              let m = world.monitor(of: ws.name),
+              let info = world.monitorInfo(m),
+              shownFloatingFrame(f, on: info, area: world.workArea(of: m)) == f else {
+            return
+        }
+
+        ws.floating[id] = f
     }
 
     /// The window server moved or resized a managed window: learn its frame;
@@ -947,21 +1013,32 @@ final class Manager: AppEvents {
     }
 
     func setFrame(_ id: WindowID, _ r: CGRect) {
-        if let w = windows[id] { connections?.connection(w.pid)?.setFrame(id, r) }
+        guard let w = windows[id] else {
+            return
+        }
+
+        writeCount[id, default: 0] += 1
+        connections?.connection(w.pid)?.setFrame(id, r)
     }
 
     func appName(of id: WindowID) -> String? { windows[id]?.app }
 
     /// A click or key press: focus that follows it is the user's doing.
-    /// `click`: the user's own click focuses what it hits, so a focus command
-    /// still waiting for its app is stale.
-    func noteInput(at t: Date, click: Bool) {
+    /// `click`: the user's own click focuses what it hits (`id` when that is a
+    /// managed window), so a focus command still waiting for its app is stale,
+    /// and so are the answers to the commands before the click.
+    func noteInput(at t: Date, click: Bool, on id: WindowID? = nil) {
         history.input(at: t)
         guard click else {
+            // A key that reached an app may move focus anywhere (an app
+            // switch, a window cycle): every report counts again.
+            echoes.movedOn()
             return
         }
 
-        focusMovedOn()
+        cancelPendingFocus()
+        if let id, windows[id] != nil { echoes.commanded(id, from: focused) } else { echoes.movedOn() }
+
         zooming.removeAll()  // a double click that zoomed nothing is over
     }
 
@@ -1002,7 +1079,12 @@ final class Manager: AppEvents {
     }
 
     func setPosition(_ id: WindowID, _ p: CGPoint) {
-        if let w = windows[id] { connections?.connection(w.pid)?.setPosition(id, p) }
+        guard let w = windows[id] else {
+            return
+        }
+
+        writeCount[id, default: 0] += 1
+        connections?.connection(w.pid)?.setPosition(id, p)
     }
 
     /// Ends a modifier+left drag: a tiled window dropped on another tiled
@@ -1014,7 +1096,7 @@ final class Manager: AppEvents {
         }
 
         if ws.floating[id] != nil {
-            readFrame(id) { f in if let f, ws.floating[id] != nil { ws.floating[id] = f } }
+            readFrame(id) { _ in }  // where it was dropped (`learnFloatingFrame`)
             return
         }
 
@@ -1042,7 +1124,7 @@ final class Manager: AppEvents {
         }
 
         if ws.floating[id] != nil {
-            readFrame(id) { f in if let f, ws.floating[id] != nil { ws.floating[id] = f } }
+            readFrame(id) { _ in }  // the size it ended up with (`learnFloatingFrame`)
             return
         }
 

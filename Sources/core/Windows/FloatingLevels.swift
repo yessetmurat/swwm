@@ -25,6 +25,7 @@ public struct FloatingLevels: Sendable {
     private var managed: [WindowID: Int32] = [:]   // raised managed windows, by app
     private var children: [WindowID: Int32] = [:]  // raised unmanaged windows, by app
     private var lowering: Set<WindowID> = []       // children lowered, until the Dock module has done it
+    private var unanswered: [WindowID: Int] = [:]  // changes handed out and not answered yet
 
     public init() {}
 
@@ -41,13 +42,13 @@ public struct FloatingLevels: Sendable {
                 return []
             }
             managed[id] = pid
-            return children.removeValue(forKey: id) == nil ? [LevelChange(window: id, level: WindowLevel.floating)] : []
+            return children.removeValue(forKey: id) == nil ? handOut([LevelChange(window: id, level: WindowLevel.floating)]) : []
         }
 
         guard managed.removeValue(forKey: id) != nil else {
             return []
         }
-        return [LevelChange(window: id, level: WindowLevel.normal)] + lowerChildren(of: pid)
+        return handOut([LevelChange(window: id, level: WindowLevel.normal)] + lowerChildren(of: pid))
     }
 
     /// A window reached the screen.
@@ -64,17 +65,18 @@ public struct FloatingLevels: Sendable {
             return []
         }
         children[id] = pid
-        return [LevelChange(window: id, level: WindowLevel.floating)]
+        return handOut([LevelChange(window: id, level: WindowLevel.floating)])
     }
 
     /// A window closed; its own level needs no change.
     public mutating func gone(_ id: WindowID) -> [LevelChange] {
         children[id] = nil
         lowering.remove(id)
+        unanswered[id] = nil
         guard let pid = managed.removeValue(forKey: id) else {
             return []
         }
-        return lowerChildren(of: pid)
+        return handOut(lowerChildren(of: pid))
     }
 
     /// A raised child turned out to be a window swwm manages: `set` decides
@@ -91,6 +93,7 @@ public struct FloatingLevels: Sendable {
     /// The Dock module applied the change: a lowered child is at the normal
     /// level now.
     public mutating func applied(_ change: LevelChange) {
+        _ = answered(change)
         guard change.level == WindowLevel.normal else {
             return
         }
@@ -98,12 +101,18 @@ public struct FloatingLevels: Sendable {
     }
 
     /// The Dock module did not apply the change. A raise is forgotten, so the
-    /// next change asks again; a lowered child is no child any more.
+    /// next change asks again; a lowered child is no child any more. Not a
+    /// raise followed by a newer change for its window: that one decides.
     public mutating func failed(_ change: LevelChange) {
+        let latest = answered(change)
         guard change.level == WindowLevel.floating else {
             lowering.remove(change.window)
             return
         }
+        guard latest else {
+            return
+        }
+
         managed[change.window] = nil
         children[change.window] = nil
     }
@@ -114,8 +123,22 @@ public struct FloatingLevels: Sendable {
         managed = [:]
         children = [:]
         lowering = []
+        unanswered = [:]
 
         return all.sorted().map { LevelChange(window: $0, level: WindowLevel.normal) }
+    }
+
+    /// Counts the changes the caller sends: each is answered once, in order.
+    private mutating func handOut(_ changes: [LevelChange]) -> [LevelChange] {
+        for c in changes { unanswered[c.window, default: 0] += 1 }
+        return changes
+    }
+
+    /// True when no newer change for the window waits for its answer.
+    private mutating func answered(_ change: LevelChange) -> Bool {
+        let rest = (unanswered[change.window] ?? 1) - 1
+        unanswered[change.window] = rest > 0 ? rest : nil
+        return rest <= 0
     }
 
     private mutating func lowerChildren(of pid: Int32) -> [LevelChange] {

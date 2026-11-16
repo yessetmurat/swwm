@@ -100,6 +100,8 @@ final class Connections {
         }
         on(NSWorkspace.didActivateApplicationNotification) { [weak self] app in
             guard app.isManageable else {
+                // No connection, so no focus report: its activation is all swwm hears of it.
+                if app.processIdentifier != getpid() { self?.events.unmanagedAppActivated() }
                 return
             }
 

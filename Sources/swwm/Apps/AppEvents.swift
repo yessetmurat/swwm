@@ -27,6 +27,8 @@ protocol AppEvents: AnyObject {
     func windowMinimized(_ id: WindowID)
     func titleChanged(_ id: WindowID, _ title: String)
     func focusChanged(_ w: AppWindow?, pid: pid_t)
+    /// An app with no connection (a system prompt's) is frontmost now.
+    func unmanagedAppActivated()
     func writeFailed(_ id: WindowID)
     func appAnswered(_ ids: Set<WindowID>)
     func startApps(_ pids: Set<pid_t>)
