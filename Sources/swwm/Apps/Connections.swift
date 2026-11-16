@@ -87,10 +87,12 @@ final class Connections {
         // app's pid reads -1, so the connections' own apps tell which quit.
         runningWatch = NSWorkspace.shared.observe(\.runningApplications) { [weak self] _, change in
             guard let self, change.kind == .removal else {
+                if change.kind != .insertion { log.debug("running apps changed, kind \(change.kind.rawValue, privacy: .public)") }
                 return
             }
 
             let gone = map.withLock { $0.filter { $0.value.app.isTerminated }.keys }
+            log.debug("running apps: one left, terminated \(gone.map(String.init).joined(separator: " "), privacy: .public)")
             for pid in gone { terminated(pid) }
         }
         on(NSWorkspace.didHideApplicationNotification) { [weak self] app in
