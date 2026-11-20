@@ -68,7 +68,8 @@ public func trackDecision(
 
     let rule = world.config.rules.first { $0.matches(app: s.app, title: s.title) }
     let back = remembered.take(s.id)
-    let floating = rule?.float == true || !s.isResizable || back?.floating == true
+    // No full-screen button: a panel, not a main window (Finder's Copy window, Info windows).
+    let floating = rule?.float == true || !s.isResizable || !s.hasFullScreenButton || back?.floating == true
         || (c.adopting && saved?.wasFloating(s.id, pid: s.pid) == true)
 
     guard let target = back.flatMap({ world.workspace(named: $0.workspace)?.name })

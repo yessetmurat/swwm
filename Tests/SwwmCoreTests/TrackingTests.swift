@@ -20,6 +20,7 @@ private func snap(
     layer: Int = 0,
     subrole: String = "AXStandardWindow",
     resizable: Bool = true,
+    fullScreenButton: Bool = true,
     fullScreen: Bool = false,
     minimized: Bool = false,
     listed: Set<WindowID>? = [1]
@@ -36,7 +37,7 @@ private func snap(
         isFullScreen: fullScreen,
         isMinimized: minimized,
         isResizable: resizable,
-        hasFullScreenButton: true,
+        hasFullScreenButton: fullScreenButton,
         listed: listed
     )
 }
@@ -200,6 +201,10 @@ private func saved(
 
 @Test func floatsWhenNotResizable() {
     #expect(decide(snap(resizable: false)) == .manage(workspace: "1", floating: true))
+}
+
+@Test func floatsWithoutFullScreenButton() {
+    #expect(decide(snap(fullScreenButton: false)) == .manage(workspace: "1", floating: true))
 }
 
 @Test func floatsWhenSavedFloatingAndAdopting() {
