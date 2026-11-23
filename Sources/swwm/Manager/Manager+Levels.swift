@@ -57,6 +57,8 @@ extension Manager {
                 layer: w.layer,
                 managed: windows[id] != nil
             ))
+            // Back from off the screen, tiled meanwhile: down now.
+            applyLevel(id)
         case .removed(let id):
             send(levels.gone(id))
         case .moved(let id):

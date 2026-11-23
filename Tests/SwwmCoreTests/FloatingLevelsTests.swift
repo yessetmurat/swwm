@@ -177,3 +177,102 @@ private func withChild() -> FloatingLevels {
     #expect(l.isRaised(1))
     #expect(l.set(1, pid: 10, floating: false) == [down(1)])
 }
+
+// Xcode's Organizer: closing it orders it out, and it comes back with the same ID.
+@Test func orderedOutWindowIsLoweredWhenBack() {
+    var l = FloatingLevels()
+    _ = l.set(1, pid: 10, floating: true)
+
+    #expect(l.gone(1) == [])
+    #expect(l.isChild(1))
+    #expect(l.appeared(
+        1,
+        pid: 10,
+        layer: Int(WindowLevel.floating),
+        managed: false
+    ) == [down(1)])
+    #expect(l.isChild(1))
+}
+
+@Test func orderedOutWindowOfRaisedAppStaysUpWhenBack() {
+    var l = FloatingLevels()
+    _ = l.set(1, pid: 10, floating: true)
+    _ = l.set(2, pid: 10, floating: true)
+    _ = l.gone(2)
+
+    #expect(l.appeared(
+        2,
+        pid: 10,
+        layer: Int(WindowLevel.floating),
+        managed: false
+    ) == [])
+    #expect(l.isChild(2))
+}
+
+@Test func orderedOutWindowIsLoweredWhenAdoptedAndTiled() {
+    var l = FloatingLevels()
+    _ = l.set(1, pid: 10, floating: true)
+    _ = l.gone(1)
+
+    l.adopt(1, pid: 10)
+
+    #expect(l.set(1, pid: 10, floating: false) == [down(1)])
+}
+
+@Test func removeAllLowersOrderedOutWindows() {
+    var l = FloatingLevels()
+    _ = l.set(1, pid: 10, floating: true)
+    _ = l.gone(1)
+
+    #expect(l.removeAll() == [down(1)])
+}
+
+@Test func quitAppForgetsOrderedOutWindows() {
+    var l = FloatingLevels()
+    _ = l.set(1, pid: 10, floating: true)
+    _ = l.gone(1)
+
+    l.appQuit(10)
+
+    #expect(!l.isChild(1))
+    #expect(l.removeAll() == [])
+}
+
+@Test func orderedOutManagedWindowIsLoweredWhenTiled() {
+    var l = FloatingLevels()
+    _ = l.set(1, pid: 10, floating: true)
+    _ = l.gone(1)
+
+    #expect(l.appeared(
+        1,
+        pid: 10,
+        layer: Int(WindowLevel.floating),
+        managed: true
+    ) == [])
+    #expect(l.set(1, pid: 10, floating: false) == [down(1)])
+}
+
+// A managed window off its space: nothing is sent to it, it may be closed already.
+@Test func departedWindowIsNotRaisedAgain() {
+    var l = FloatingLevels()
+    _ = l.set(1, pid: 10, floating: true)
+    _ = l.gone(1)
+
+    #expect(l.set(1, pid: 10, floating: true) == [])
+    #expect(l.isRaised(1))
+}
+
+@Test func departedWindowTiledMeanwhileIsLoweredWhenBack() {
+    var l = FloatingLevels()
+    _ = l.set(1, pid: 10, floating: true)
+    _ = l.gone(1)
+
+    #expect(l.set(1, pid: 10, floating: false) == [])
+    _ = l.appeared(
+        1,
+        pid: 10,
+        layer: Int(WindowLevel.floating),
+        managed: true
+    )
+    #expect(l.set(1, pid: 10, floating: false) == [down(1)])
+}

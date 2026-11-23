@@ -156,6 +156,7 @@ extension Manager {
         for (id, w) in windows where w.pid == pid { untrack(id, remember: false) }
 
         remembered.forget(pid: pid)
+        levels.appQuit(pid)
         startPids.remove(pid)
     }
 
